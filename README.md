@@ -30,7 +30,7 @@ git remote set-url origin https://github.com/team-repository-owner/team-reposito
 git remote add upstream https://github.com/Code-the-Dream-School/city-air-tracker-student
 git push origin main
 ```
-
+ 
 4. In the team's new GitHub repository, add every student and mentor on the team as a collaborator.
 5. All other team members should clone the new team repository:
 
