@@ -48,6 +48,14 @@ git remote -v
 
 `origin` should point to the team's repository. `upstream` should point to the Code the Dream starter repository.
 
+## Running tests
+
+From the repository root, with dependencies installed (`pip install -r requirements.txt`):
+
+```shell
+python -m pytest
+```
+
 ## Additional docs
 
 Browse [Docs table of Contents](./docs/docs_toc.md) for the full categorized index.
