@@ -23,11 +23,11 @@ Write a short summary in your team's own words that explains:
 
 ## Initial Data Set:
 
-**Air Pollution**
+**[Air Pollution](https://openweathermap.org/api/air-pollution?collection=environmental)**
 
-- Current End Point
-- Historical End Point
-- Forecast End Point
+- [Current End Point](https://openweathermap.org/api/air-pollution#current)
+- [Historical End Point](https://openweathermap.org/api/air-pollution#history)
+- [Forecast End Point](https://openweathermap.org/api/air-pollution#forecast)
 
 These end points and datasets were chosen to give insight on the issue of air pollution in (Our selected scope and area).
 
@@ -37,7 +37,7 @@ Contains: current, historical, and forecasted pollution
 
 **Available measurements:**
 
-- AQI: Air quality index on a 1 to 5 scale(5 being the worse)(Index levels for specific areas)
+- AQI: Air quality index on a 1 to 5 scale(5 being the worse)([Index levels for specific areas](https://openweathermap.org/api/air-pollution-index-levels?collection=environmental))
 - PM2.5: Fine particulate matter
 - PM10: Coarse particulate matter
 - CO: Carbon monoxide
