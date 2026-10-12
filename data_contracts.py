@@ -3,7 +3,37 @@ import datetime
 from pydantic import BaseModel, field_validator
 from typing import Optional
 
-# --- Raw Schema ---
+# --- Raw Schemas ---
+
+# open-mateo
+
+class Results(BaseModel):
+    id: int
+    name: str
+    latitude: float
+    longitude: float
+    elevation: float
+    feature_code: str
+    country_code: str
+    admin1_id: int
+    admin2_id: int
+    admin3_id: int
+    admin4_id: int
+    timezone: str
+    population: int
+    postcodes: list[str]
+    country_id: int
+    country: str
+    admin1: str
+    admin2: str
+    admin3: str
+    admin4: str
+
+class RawOpenMateo(BaseModel):
+    results: list[Results]
+    generationtime_ms: float
+
+# OpenWeather
 
 class Components(BaseModel):
     co: float
@@ -35,6 +65,58 @@ class RawAirTrackerData(BaseModel):
     retrieve_date: str
 
 # Raw Data Example
+
+# open-mateo
+raw_mateo = {
+    "results": [
+        {
+            "id": 2988507,
+            "name": "Paris",
+            "latitude": 48.85341,
+            "longitude": 2.3488,
+            "elevation": 42.0,
+            "feature_code": "PPLC",
+            "country_code": "FR",
+            "admin1_id": 3012874,
+            "admin2_id": 2968815,
+            "admin3_id": 2988506,
+            "admin4_id": 6455259,
+            "timezone": "Europe/Paris",
+            "population": 2138551,
+            "postcodes": [
+                "75001",
+                "75020",
+                "75002",
+                "75003",
+                "75004",
+                "75005",
+                "75006",
+                "75007",
+                "75008",
+                "75009",
+                "75010",
+                "75011",
+                "75012",
+                "75013",
+                "75014",
+                "75015",
+                "75016",
+                "75017",
+                "75018",
+                "75019"
+            ],
+            "country_id": 3017382,
+            "country": "France",
+            "admin1": "Île-de-France Region",
+            "admin2": "Paris Department",
+            "admin3": "Paris",
+            "admin4": "Paris"
+        }
+    ],
+    "generationtime_ms": 0.64599514
+}
+
+# OpenWeather
 raw_data = {
     "retrieve_date": "2026-10-11",
     "coord": {
@@ -63,6 +145,22 @@ raw_data = {
 
 # --- Golden Schema ---
 
+# open-mateo
+
+class Locations(BaseModel):
+    name: str
+    lat: float
+    lon: float
+    elevation: float
+    country: str
+    region: str
+    population: int
+
+class GoldenMateo(BaseModel):
+    locations: list[Locations]
+
+# OpenWeather
+
 class GoldListItem(BaseModel):
     date_time: datetime.datetime
     aqi: int
@@ -72,9 +170,16 @@ class GoldSchema(BaseModel):
     retrieve_date: datetime.date
     coordinates: Coordinates
     city: str
-    readings: list[ListItem]
+    readings: list[GoldListItem]
 
 # Golden Data Example
+
+golden_mateo = [
+    {
+        "name": "Paris"
+    }
+]
+
 golden_data = {
     "retrieve_date": "2026-10-11",
     "coordinates": {
