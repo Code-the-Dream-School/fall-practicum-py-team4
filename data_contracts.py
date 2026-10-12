@@ -176,7 +176,13 @@ class GoldSchema(BaseModel):
 
 golden_mateo = [
     {
-        "name": "Paris"
+        "name": "Paris",
+        "lat": 48.85341,
+        "lon": 2.3488,
+        "elevation": 42.0,
+        "country": "France",
+        "region": "Europe",
+        "population": 2138551
     }
 ]
 
