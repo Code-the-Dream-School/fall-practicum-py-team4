@@ -1,10 +1,10 @@
 # City Air Tracker - System Architecture & Plan
 
-This document outlines the system architecture and data flow for the **City Air Tracker** project, detailing how data moves from input through raw and gold PostgreSQL storage, powers Streamlit dashboard, and maps to an eventual AWS cloud deployment.
+This document outlines the system architecture and data flow for the **City Air Tracker** project, detailing how data moves from input through raw and gold PostgreSQL storage, powers the Streamlit dashboard, and maps to an eventual AWS cloud deployment.
 
 ## System Architecture Diagram
 
-The diagram below illustrates the major components and connections of the system:
+The diagram below illustrates the major local components and connections of the system:
 
 ```mermaid
 graph TD
@@ -36,18 +36,7 @@ graph TD
     subgraph Dashboard_API [6. Consumption & Dashboard]
         D2 --> F1[Streamlit Dashboard]
     end
-
-    subgraph AWS_Deployment [7. Eventual AWS Deployment]
-        AWS_DB[(Amazon RDS for PostgreSQL)]
-        AWS_FE[Amazon S3 / EC2 <br/> Streamlit App Hosting]
-    end
-
-    %% Connections to Deployment
-    D2 -.->|Replaces local DB| AWS_DB
-    F1 -.->|Hosted on| AWS_FE
 ```
-
----
 
 ## Component Breakdown
 
@@ -72,7 +61,53 @@ graph TD
 6. **Dashboard**
    - **Streamlit Dashboard:** Displays historical air quality metrics, interactive charts, and city trends.
 
-7. **Eventual AWS Deployment**
-   - **Database:** Transition from local/Azure PostgreSQL to **Amazon RDS for PostgreSQL**.
-   - **Compute & Orchestration:** Containerized workloads running on **AWS ECS** or **EC2** for the batch pipeline.
-   - **App Hosting:** **AWS EC2 / ECS** to host and run the interactive Streamlit dashboard application.
+## Eventual AWS Deployment
+
+The following diagram illustrates the system transitioned to an eventual AWS deployment:
+
+```mermaid
+graph TD
+    %% Sources
+    subgraph Sources [External Sources]
+        A1[City List / Database]
+        A2[OpenWeather APIs]
+    end
+
+    %% AWS Cloud Environment
+    subgraph AWS_Cloud [AWS Cloud Architecture]
+        
+        %% Scheduling & Monitoring
+        EB[Amazon EventBridge <br/> Scheduled Trigger] -->|Triggers hourly/daily| L1
+        
+        %% Compute (Extract & Transform)
+        subgraph Compute
+            L1[AWS Lambda <br/> Python Extract & Transform]
+        end
+        
+        %% Storage
+        subgraph Storage
+            RDS[(Amazon RDS <br/> PostgreSQL Database)]
+        end
+        
+        %% Consumption
+        subgraph Frontend
+            FE[Amazon EC2 / S3 <br/> Streamlit Dashboard]
+        end
+        
+        %% Monitoring
+        L1 -.->|Logs & Metrics| CW[Amazon CloudWatch]
+    end
+
+    %% Data Flows
+    A1 --> L1
+    A2 -->|Fetch weather data| L1
+    L1 -->|Save raw & gold data| RDS
+    RDS -->|Query data| FE
+```
+
+### AWS Deployment Components
+
+- **Database:** Transition from local PostgreSQL to **Amazon RDS for PostgreSQL**.
+- **Compute & Orchestration:** Serverless batch pipeline running on **AWS Lambda**, triggered on a schedule by **Amazon EventBridge**.
+- **App Hosting:** **Amazon EC2 / S3 / ECS** to host and run the interactive Streamlit dashboard application.
+- **Observability:** Pipeline execution logs, metrics, and error monitoring managed through **Amazon CloudWatch**.
