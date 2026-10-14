@@ -29,59 +29,50 @@ Write a short summary in your team's own words that explains:
 - [Historical End Point](https://openweathermap.org/api/air-pollution#history)
 - [Forecast End Point](https://openweathermap.org/api/air-pollution#forecast)
 
-These end points and datasets were chosen to give insight on the issue of air pollution in (Our selected scope and area).
+These end points and datasets were chosen to give insight on the issue of air pollution across different locations worldwide through a general air quality dashboard.
 
-Could possibly need another API or list of geo long and lat data due to the API requiring these as parameters.
+An additional geographic data source may be needed to obtain latitude and longitude coordinates, as the API requires these parameters.
 
 Contains: current, historical, and forecasted pollution
 
 **Available measurements:**
 
-- AQI: Air quality index on a 1 to 5 scale(5 being the worse)([Index levels for specific areas](https://openweathermap.org/api/air-pollution-index-levels?collection=environmental))
+- AQI: Air quality index on a 1 to 5 scale (5 being the worst) ([Index levels for specific areas](https://openweathermap.org/api/air-pollution-index-levels?collection=environmental))
 - PM2.5: Fine particulate matter
 - PM10: Coarse particulate matter
 - CO: Carbon monoxide
 - NO: Nitrogen monoxide
-- NO_2: Nitrogen dioxide
-- O_2: Ozone
-- SO_2: Sulfur dioxide
-- NH_2: Ammonia
+- NO₂: Nitrogen dioxide
+- O₃: Ozone
+- SO₂: Sulfur dioxide
+- NH₃: Ammonia
 - Time stamps and coordinates
 
 ## Pipeline Stages:
 
-**(Needs to be done once)**
+**(Needs to be done once per location)**
 
 **Extract 1:** Pull long and lat for parameters including context, date pulled, parameters, and source payload.
 
-**Transform 1:** Validate entries for completeness(need to discuss handling of failure of this constraint), add geographic information such as state or country.
+**Transform 1:** Validate entries for completeness, add geographic information such as state or country.
 
-**Load 1:** Store features and data(need to discuss data storage location)
+**Load 1:** Store features and geographic data for reuse.
 
 **(Can be done multiple times at set times or real time)**
 
 **Extract 2:** Pull data from each required endpoint including context, date pulled, parameters, and source payload.
 
-**Transform 2:** Validate entries for completeness, null checks, geographic granularity, any analytical aggregations or new features to be created(depends on project chosen and analysis to be done/visualized).
+**Transform 2:** Validate entries for completeness, null checks, geographic granularity, and any analytical aggregations or new features needed for the dashboard.
 
-**Load 2:** Store features and data(need to discuss data storage location) must be idempotent due to repeated pulls in the future.
+**Load 2:** Store features and data according to the team's data contracts. Must be idempotent due to repeated pulls in the future.
 
-## Possible Projects:
+## Project:
 
-The data will support these(this) (possible) project(s):
+The data will support the following project:
 
 - **Air quality dashboard**
-  - Provides an understanding of pollution levels in a selected country, state, or city through selected indicators and historical/current rates comparisons.
-  - Could use either or all end points
-  - Need to choose aggregation level like hours or day then the key indicators
-  - Which coordinates or how many coordinate(long, lat) will be used for this(need to check this)
-  - We could use streamlit or other dashboard services such as powerBI or tableau
-- **GIS**
-  - Provides holistic visual of areas of concern or no concern
-  - Can change color based on current to different forecast horizons
-  - Color coded by AQI map of a selected country, region, state, or world
-  - Drill down from a specific continent to country to state or region
-  - Tooltips describing key metrics for each level of drill down through click or zoom
-  - Can show on the side current warning areas or forecasted warning areas with level of warning
-
-Combination of these two are also possible
+  - Provides an understanding of pollution levels worldwide for a user-selected ZIP code or geographic coordinates (longitude and latitude).
+  - Displays selected air pollution indicators using current, historical, and/or forecasted data.
+  - Need to choose aggregation level like hours or day then the key indicators.
+  - Geographic coordinates will be used to retrieve pollution measurements for the selected location.
+  - Streamlit will be used to develop the interactive dashboard.
