@@ -16,18 +16,18 @@ class Results(BaseModel):
     feature_code: str
     country_code: str
     admin1_id: int
-    admin2_id: int
-    admin3_id: int
-    admin4_id: int
+    admin2_id: Optional[int] = None
+    admin3_id: Optional[int] = None
+    admin4_id: Optional[int] = None
     timezone: str
     population: int
     postcodes: list[str]
     country_id: int
     country: str
     admin1: str
-    admin2: str
-    admin3: str
-    admin4: str
+    admin2: Optional[str] = None
+    admin3: Optional[str] = None
+    admin4: Optional[str] = None
 
 class RawOpenMateo(BaseModel):
     results: list[Results]
@@ -233,3 +233,25 @@ def transform(raw_records: list) -> list:
     # Takes a list of raw data instances. Cleans and transforms the data and 
     # returns it in a form following the gold schema
     return []
+
+# --- Input Configuration ---
+
+cities: list[str]
+date_range: str
+time_of_day: str
+daily: bool = True     # openweather pulls hourly, so this will set a daily pull to avoid timeouts
+
+# input example
+
+input = {
+    "cities": ["new york", "london", "seoul", "jakarta"],
+    "date_range": "01/01/2020 - 01/01/2026"
+}
+
+# all strings are converted to lowercase for processing.
+# numbers are recorded as floats except when given integers by data source.
+# dates are converted to datetime objects, and ranges are split into two categories, start and end.
+# date ranges should specify one daily value, and capture the same time of day for entire range
+# missing or invalid values are replaced with NaN, and the row is removed from the dataframe.
+# missing city value will stop the pipeline from running and request user input.
+# date_range only needed when searching for historical information.
