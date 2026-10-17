@@ -248,7 +248,7 @@ def load_raw(raw_records: list) -> None:
     # try/except blocks to check for upload issues, displays warnings and updates progress
 
     # Returns nothing
-    return
+    pass
 
 def transform(raw_records: list) -> list:
     # takes a list of raw data instances. Cleans and transforms the data
@@ -258,18 +258,18 @@ def transform(raw_records: list) -> list:
 
 # --- Input Configuration ---
 
-cities: list[str]       # accepts city names and zipcodes
-date_range: str
-daily: bool = True     # openweather pulls hourly, so this will set a daily pull to avoid timeouts
-time_of_day: str
+cities: list[str]                       # accepts city names and zipcodes
+date_range: Optional[str] = ""
+daily: Optional[bool] = True            # openweather pulls hourly, so this will set a daily pull to avoid timeouts
+time_of_day: Optional[str] = "12:00"
 
 # Input Example
 
 input = {
     "cities": ["new york", "london", "seoul", "jakarta"],
-    "date_range": Optional["01/01/2020 - 01/01/2026"],
-    "daily": Optional[True],
-    "time_of_day": Optional["1500"]
+    "date_range": "01/01/2020 - 01/01/2026",
+    "daily": True,
+    "time_of_day": "15:00"
 }
 
 # all strings are converted to lowercase.
