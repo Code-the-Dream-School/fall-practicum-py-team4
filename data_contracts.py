@@ -213,11 +213,29 @@ golden_data = {
 
 # --- Function Signatures ---
 
-def extract(latitude: float, longitude: float, endpoint='/', start_date=None, end_date=None ) -> list: 
-    # Takes latitude and longitude coordinates
-    # Extracts data from openweathermap and uses the raw schema to validate values 
-    # Requires start and end dates if endpoint is set to 'history'
-    # Returns a list of instances of raw data
+def geocodes(cities: list) -> dict:
+    # takes a list of cities/zipcodes and returns the latitude and longitude for each as a dictionary
+    return{}
+
+def get_unix(time: str, start_date: str) -> int:
+    # takes a time and start date to determine the unix time code
+    # try/except block to determine time and start_date are correct types
+    unix_code = 0
+    return unix_code
+
+def extract(latitude: float, longitude: float, endpoint='/', start_date=None, end_date=None, daily=True, time_of_day='1200') -> list: 
+    # latitude and longitude coordinates from the geocodes function
+    # endpoint directs the call to the present, forcast, or history data for the given point
+    # start_date and end_date are optional and are used to set the dates when requesting the 'history' endpoint
+    # daily is optional and automatically set to True. this retrieves one pull per day at the time set by time_of_day, else hourly
+    # time_of_day sets the hour of day to retrieve for each day when daily is set to True, else '1200'
+    # extracts data from openweathermap and uses the raw schema to validate values 
+    # requires start and end dates if endpoint is set to 'history'
+    # check for value and key errors with try/except blocks. write message to user to correct errors
+    # when using 'history' endpoint, start_date, end_date, and daily are required. time_of_day required when daily is True
+    # returns a list of instances of raw data
+
+
     if endpoint == "/history" and (start_date == None or end_date == None):
         print("When using the '/history' endpoint, start and end dates must be specified")
         return[]
@@ -225,30 +243,36 @@ def extract(latitude: float, longitude: float, endpoint='/', start_date=None, en
     return []
 
 def load_raw(raw_records: list) -> None:
-    # Takes a list of raw data instances and loads the raw data into the database
+    # takes a list of raw data instances and loads the raw data into the database
+    # uses the defined raw schema to read and write
+    # try/except blocks to check for upload issues, displays warnings and updates progress
+
     # Returns nothing
-    pass
+    return
 
 def transform(raw_records: list) -> list:
-    # Takes a list of raw data instances. Cleans and transforms the data and 
+    # takes a list of raw data instances. Cleans and transforms the data
+    # try/except blocks to catch type and key errors while transforming
     # returns it in a form following the gold schema
     return []
 
 # --- Input Configuration ---
 
-cities: list[str]
+cities: list[str]       # accepts city names and zipcodes
 date_range: str
-time_of_day: str
 daily: bool = True     # openweather pulls hourly, so this will set a daily pull to avoid timeouts
+time_of_day: str
 
-# input example
+# Input Example
 
 input = {
     "cities": ["new york", "london", "seoul", "jakarta"],
-    "date_range": "01/01/2020 - 01/01/2026"
+    "date_range": Optional["01/01/2020 - 01/01/2026"],
+    "daily": Optional[True],
+    "time_of_day": Optional["1500"]
 }
 
-# all strings are converted to lowercase for processing.
+# all strings are converted to lowercase.
 # numbers are recorded as floats except when given integers by data source.
 # dates are converted to datetime objects, and ranges are split into two categories, start and end.
 # date ranges should specify one daily value, and capture the same time of day for entire range
