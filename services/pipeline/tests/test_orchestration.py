@@ -10,6 +10,7 @@ import data_contracts as dc
 from pipeline import contracts
 from pipeline import orchestration as orch
 from pipeline.extract import geocoding as geo
+from pipeline.transform.gold_rows import GOLD_TABLE_COLUMNS, to_gold_rows
 from pipeline.retention import RETENTION_DAYS, ROLLING_WARMUP_DAYS, extraction_window, retention_cutoff
 
 NOW = datetime(2026, 10, 19, 20, tzinfo=timezone.utc)
@@ -97,11 +98,13 @@ def test_contract_input_hourly_run_logs_pipeline_runs_shape(http):
     assert set(result.to_dict()) == {"id", "status", "records_added", "runs_time", "created_at"}
     assert store.rows == [{k: v for k, v in result.to_dict().items() if k != "id"}]
     assert result.id == 101 and result.status == "succeeded" and result.created_at == "2026-10-19T20:00:00Z"
-    # 60 days of hourly readings kept; the 7 warm-up days are dropped.
+    # 60 days of hourly readings kept; the 7 warm-up days are dropped after rolling.
     assert result.records_added == 60 * 24 == len(gold_loaded[0]["readings"])
     readings = gold_loaded[0]["readings"]
     assert gold_loaded[0]["city"] == "charlotte, nc, us" and gold_loaded[0]["country"] == "us"
     assert readings[0]["date_time"] > retention_cutoff(NOW)
+    assert all(r["aqi_rolling_7d"] is not None for r in readings)
+    assert readings[0]["risk_score"] == 50.0
     dc.GoldSchema.model_validate(gold_loaded[0])
     # load_raw(raw_records: list) is called once with contract-shaped raw records.
     (raw_records,), _ = raw_loaded.call_args
@@ -117,6 +120,7 @@ def test_contract_default_daily_keeps_one_reading_per_day_at_time_of_day(http):
     readings = gold[0]["readings"]
     assert result.records_added == 60 == len(readings)
     assert {r["date_time"].hour for r in readings} == {15}
+    assert all(r["aqi_rolling_7d"] is not None for r in readings)
 
 
 def test_contract_date_range_is_used_and_gold_still_keeps_60_days(http):
@@ -165,3 +169,16 @@ def test_supabase_run_store_inserts_row_and_returns_db_id(http):
     # Exactly the pipeline_runs columns; id comes from the database.
     assert set(row) == {"status", "records_added", "runs_time", "created_at"}
     assert result.id == 7 and result.status == "succeeded"
+
+
+def test_gold_rows_use_gold_table_columns(http):
+    gold = []
+    run({"cities": ["charlotte, us"]}, load_gold=gold.extend)
+    rows = to_gold_rows(gold[0])
+    # Columns seen in Supabase gold_table on 2026-10-20, minus the database id.
+    assert set(rows[0]) == {"longitude", "latitude", "city", "country", "co", "pm2_5", "no2",
+                            "date", "retrieve_date", "aqi", "sentiment_label", "running_average"}
+    assert set(GOLD_TABLE_COLUMNS.values()) == set(rows[0])
+    assert len(rows) == 60 and rows[0]["sentiment_label"] in {"Good", "Fair", "Moderate", "Poor", "Very Poor"}
+    assert rows[0]["retrieve_date"] == "2026-10-19T00:00:00+00:00"
+    assert rows[0]["date"].endswith("+00:00") and rows[0]["running_average"] is not None

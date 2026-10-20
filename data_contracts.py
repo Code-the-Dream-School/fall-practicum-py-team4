@@ -1,7 +1,7 @@
 import datetime
 
-from pydantic import BaseModel, field_validator
-from typing import Optional
+from pydantic import BaseModel, Field, field_validator
+from typing import Literal, Optional
 
 # --- Raw Schemas ---
 
@@ -167,6 +167,10 @@ class GoldListItem(BaseModel):
     date_time: datetime.datetime
     aqi: int
     components: Components
+    # derived fields, see docs/reference/gold_data_dictionary.md
+    aqi_category: Literal["Good", "Fair", "Moderate", "Poor", "Very Poor"]   # T4AIR-20, from aqi
+    risk_score: float = Field(ge=0, allow_inf_nan=False)                     # T4AIR-20, pm2_5 / 15 * 100
+    aqi_rolling_7d: Optional[float] = Field(ge=1, le=5, allow_inf_nan=False) # T4AIR-21, None until 7 days of history
 
 class GoldSchema(BaseModel):
     retrieve_date: datetime.date
@@ -212,7 +216,10 @@ golden_data = {
                 "pm10": 4.28, 
                 "nh3": 0.01
             }, 
-            "date_time": "2026-10-11T15:00:00Z"
+            "date_time": "2026-10-11T15:00:00Z",
+            "aqi_category": "Fair",
+            "risk_score": 21.666666666666668,
+            "aqi_rolling_7d": 2.25
         }
     ]
 }
@@ -278,7 +285,8 @@ input = {
     "time_of_day": "15:00"
 }
 
-# all strings are converted to lowercase.
+# all strings are converted to lowercase, except aqi_category, which keeps
+# OpenWeather's labels (Good, Fair, Moderate, Poor, Very Poor).
 # gold keeps the last 60 days of readings; each run requests 60 + 7 days so the
 # 7-day rolling AQI is complete on the oldest kept day (see pipeline/retention.py).
 # numbers are recorded as floats except when given integers by data source.

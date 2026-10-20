@@ -12,8 +12,8 @@ The extract modules implement T4AIR-5 and T4AIR-8 and are called by
 - `raw_dir` is retained for compatibility and may be `None`. These functions
   do not write raw files or persist air-pollution responses.
 - History window: orchestration requests the last 60 days plus 7 warm-up days
-  for the rolling average (`pipeline.retention.extraction_window`); gold keeps
-  readings newer than `now - 60 days` (`pipeline.retention.drop_expired`).
+  for the rolling average (`pipeline.retention.extraction_window`). See the
+  [gold data dictionary](gold_data_dictionary.md#retention-60-days).
 
 ## Setup
 
@@ -138,8 +138,8 @@ A city can be a bare name (provider's top match), `city, country`,
 run with `ValueError`.
 
 It runs `geocodes` -> `extract` -> `load_raw(raw_records)` ->
-`transform(raw_records)` -> 60-day cut and lowercase (`finalize_gold`) ->
-`load_gold`. Those names and signatures are the ones in `data_contracts.py`
+`transform(raw_records)` -> enrich (category, score, rolling AQI, 60-day cut)
+-> `load_gold`. Those names and signatures are the ones in `data_contracts.py`
 and live in `pipeline/contracts.py`; `load_raw` and `transform` are passed in
 until T4AIR-15 and T4AIR-16 are merged. Raw records are `RawAirTrackerData`
 dicts plus `city` and `country`. Deployment target is AWS (Lambda +
@@ -155,7 +155,9 @@ Each run produces one `pipeline_runs` row:
 These are the columns of the Supabase `pipeline_runs` table (checked
 2026-10-20). `run_store` needs `save(row) -> id`. `SupabaseRunStore(client)`
 inserts the row into `pipeline_runs` and returns the database id; the default
-`LoggingRunStore` only logs it.
+`LoggingRunStore` only logs it. Gold rows for the Supabase `gold_table` come
+from `pipeline.transform.gold_rows.to_gold_rows`; see the column mapping and
+gaps in the [gold data dictionary](gold_data_dictionary.md#supabase-gold_table-mapping).
 
 This does not verify a live OpenWeather call, a live PostgreSQL round trip,
 or the real transform and loaders.

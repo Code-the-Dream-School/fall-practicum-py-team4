@@ -19,6 +19,7 @@ from typing import Any, Protocol
 
 from pipeline import contracts
 from pipeline.retention import drop_expired
+from pipeline.transform.enrich import enrich_gold_record
 
 log = logging.getLogger(__name__)
 
@@ -94,7 +95,10 @@ def finalize_gold(record: GoldRecord, now: datetime) -> GoldRecord:
 def run_transform_stage(
     raw_records: list[RawRecord], transform: Callable[[list], list], now: datetime,
 ) -> list[GoldRecord]:
-    return [finalize_gold(record, now) for record in transform(raw_records)]
+    # Derived fields go on before the 60-day cut so the oldest kept day has a
+    # full rolling window. enrich_gold_record recalculates them, so it is safe
+    # even if the T4AIR-16 transform already added category and score.
+    return [finalize_gold(enrich_gold_record(record), now) for record in transform(raw_records)]
 
 
 def run_pipeline_job(
