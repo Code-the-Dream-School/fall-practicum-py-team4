@@ -27,12 +27,19 @@ _US_STATES = dict(item.split(":") for item in (
 ).split("|"))
 
 
+DIRECT_PATH = "/geo/1.0/direct"
+ZIP_PATH = "/geo/1.0/zip"
+
+
 @dataclass(frozen=True)
 class Coordinates:
     lat: float
     lon: float
     retrieved_at: datetime
     from_cache: bool = False
+    # Kept so gold can add state if the team keeps a U.S.-only scope.
+    country: str | None = None
+    state: str | None = None
 
 
 def _validate(payload):
@@ -49,25 +56,10 @@ def _validate(payload):
             raise OpenWeatherError("Malformed geocoding coordinates") from None
 
 
-def geocode_city(
-    raw_dir: Path, city: str, country_code: str, state: str | None = None,
-    *, force_refresh: bool = False, use_cache: bool = True, cache=None,
-) -> Coordinates:
-    """raw_dir is accepted for compatibility; cache storage is PostgreSQL."""
-    city, country_code, state = location_input(city, country_code, state)
-    state_name = state
-    query_parts = [city]
-    if state and country_code == "US":
-        code = next((code for code, name in _US_STATES.items()
-                     if state.upper() == code or state.casefold() == name.casefold()), None)
-        if code is None:
-            raise InputError("Use a recognized US state name or postal code")
-        state_name = _US_STATES[code]
-        query_parts.append(code)
-    query_parts.append(country_code)
-    params = {"q": ",".join(query_parts), "limit": 5}
+def _lookup(path, params, key_extra, *, force_refresh, use_cache, cache):
+    """Cached geocoding GET; returns (candidate list, fetched_at, from_cache)."""
     key = hashlib.sha256(json.dumps(
-        [1, "/geo/1.0/direct", params, state_name], sort_keys=True,
+        [1, path, params, key_extra], sort_keys=True,
     ).encode()).hexdigest()
     ttl = env_seconds("OPENWEATHER_LOOKUP_TTL_SECONDS", 2592000, allow_zero=True)
     empty_ttl = env_seconds("OPENWEATHER_EMPTY_LOOKUP_TTL_SECONDS", 3600, allow_zero=True)
@@ -78,21 +70,75 @@ def geocode_city(
             _validate(cached[0])
         except OpenWeatherError:
             cached = None
-    if cached is None:
-        payload = get_json("/geo/1.0/direct", params)
-        _validate(payload)
-        fetched = utc_now()
-        if store:
-            store.put(key, payload, fetched, ttl if payload else empty_ttl)
-    else:
-        payload, fetched = cached
+    if cached is not None:
+        return cached[0], cached[1], True
+    payload = get_json(path, params)
+    if path == ZIP_PATH:
+        # The zip endpoint returns one object; the cache table stores lists.
+        payload = [payload] if isinstance(payload, dict) and payload else []
+    _validate(payload)
+    fetched = utc_now()
+    if store:
+        store.put(key, payload, fetched, ttl if payload else empty_ttl)
+    return payload, fetched, False
+
+
+def _coordinates(item, fetched, from_cache):
+    return Coordinates(
+        float(item["lat"]), float(item["lon"]), fetched, from_cache,
+        country=item["country"].upper(), state=item.get("state") or None,
+    )
+
+
+def geocode_city(
+    raw_dir: Path | None, city: str, country_code: str | None, state: str | None = None,
+    *, force_refresh: bool = False, use_cache: bool = True, cache=None,
+) -> Coordinates:
+    """raw_dir is accepted for compatibility; cache storage is PostgreSQL.
+
+    With a country code, more than one distinct match is an error. Without one
+    (data_contracts input is a bare city name) the provider's top result is used.
+    """
+    city, country_code, state = location_input(city, country_code, state)
+    state_name = state
+    query_parts = [city]
+    if state and country_code == "US":
+        code = next((code for code, name in _US_STATES.items()
+                     if state.upper() == code or state.casefold() == name.casefold()), None)
+        if code is None:
+            raise InputError("Use a recognized US state name or postal code")
+        state_name = _US_STATES[code]
+        query_parts.append(code)
+    if country_code:
+        query_parts.append(country_code)
+    params = {"q": ",".join(query_parts), "limit": 5}
+    payload, fetched, from_cache = _lookup(
+        DIRECT_PATH, params, state_name,
+        force_refresh=force_refresh, use_cache=use_cache, cache=cache,
+    )
     matches = [item for item in payload
-               if item["country"].upper() == country_code
+               if (not country_code or item["country"].upper() == country_code)
                and (not state_name or str(item.get("state", "")).casefold() == state_name.casefold())]
     unique = {(item["lat"], item["lon"]): item for item in matches}
     if not unique:
         raise OpenWeatherError("No matching city; check city, country and state")
-    if len(unique) != 1:
+    if country_code and len(unique) != 1:
         raise OpenWeatherError("Ambiguous city; provide a more specific city or state")
-    item = next(iter(unique.values()))
-    return Coordinates(float(item["lat"]), float(item["lon"]), fetched, cached is not None)
+    return _coordinates(next(iter(unique.values())), fetched, from_cache)
+
+
+def geocode_zip(
+    zip_code: str, country_code: str = "US",
+    *, force_refresh: bool = False, use_cache: bool = True, cache=None,
+) -> Coordinates:
+    """Resolve a postal code (data_contracts `cities` accepts zipcodes)."""
+    if not isinstance(zip_code, str) or not zip_code.strip() or "," in zip_code:
+        raise InputError("Provide a postal code without commas")
+    _, country_code, _ = location_input("zip", country_code)
+    params = {"zip": f"{zip_code.strip()},{country_code}"}
+    payload, fetched, from_cache = _lookup(
+        ZIP_PATH, params, None, force_refresh=force_refresh, use_cache=use_cache, cache=cache,
+    )
+    if not payload:
+        raise OpenWeatherError("No matching postal code")
+    return _coordinates(payload[0], fetched, from_cache)

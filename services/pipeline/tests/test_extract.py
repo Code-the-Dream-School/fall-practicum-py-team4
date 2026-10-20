@@ -1,10 +1,8 @@
-import ast
 import copy
 import json
 import traceback
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock
 
 import psycopg
@@ -246,23 +244,8 @@ def test_postgres_write_uses_bound_json_parameters(monkeypatch):
     assert params[3] == NOW+timedelta(seconds=60)
 
 
-def test_existing_team_extraction_stage_accepts_real_adapters(monkeypatch):
-    # Compile only the reviewed stage: the repository's other modules are missing.
-    source = Path(__file__).parents[1] / "src/pipeline/orchestration/__init__.py"
-    tree = ast.parse(source.read_text())
-    stage = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "run_extract_stage")
-    store = MemoryCache()
-    monkeypatch.setattr(geo, "PostgresLookupCache", lambda: store)
-    get = Mock(side_effect=lambda url, **kw: response(CITY if "/geo/" in url else POLLUTION))
-    monkeypatch.setattr(requests, "get", get)
-    namespace = dict(Path=Path, datetime=datetime, RawAirPollutionRecord=air.RawAirPollutionRecord,
-                     settings=SimpleNamespace(cities_source="database"),
-                     read_cities=lambda _: [SimpleNamespace(city="New York",country_code="US",state="NY")],
-                     geocode_city=geo.geocode_city, fetch_air_pollution_history=air.fetch_air_pollution_history)
-    exec(compile(ast.Module(body=[stage], type_ignores=[]), "team_stage", "exec"), namespace)
-    for _ in range(2):
-        records, count = namespace["run_extract_stage"](Path("unused"), NOW-timedelta(hours=24), NOW, "run-1", 10)
-        assert count == 1 and records[0].pipeline_run_id == 10
-        assert records[0].payload == POLLUTION
-    # One geocoding request, then two fresh history requests.
-    assert get.call_count == 3
+
+def test_geocode_returns_country_and_state_for_gold(monkeypatch):
+    monkeypatch.setattr(geo, "get_json", Mock(return_value=CITY))
+    coords = geo.geocode_city(None, "New York", "US", "NY", cache=MemoryCache())
+    assert (coords.country, coords.state) == ("US", "New York")

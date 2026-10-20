@@ -11,6 +11,10 @@ import requests
 
 BASE_URL = "https://api.openweathermap.org"
 MAX_BODY_BYTES = 10 * 1024 * 1024
+ALLOWED_PATHS = (
+    "/geo/1.0/direct", "/geo/1.0/zip", "/data/2.5/air_pollution",
+    "/data/2.5/air_pollution/forecast", "/data/2.5/air_pollution/history",
+)
 
 
 class InputError(ValueError):
@@ -56,7 +60,8 @@ def coordinate(value, name, minimum, maximum):
 def location_input(city, country_code, state=None):
     if not isinstance(city, str) or not city.strip() or "," in city:
         raise InputError("Provide a city name without comma-separated fields")
-    if (not isinstance(country_code, str) or len(country_code.strip()) != 2
+    if country_code is not None and (
+            not isinstance(country_code, str) or len(country_code.strip()) != 2
             or not country_code.strip().isascii()
             or not country_code.strip().isalpha()):
         raise InputError("country_code must contain two letters")
@@ -64,7 +69,8 @@ def location_input(city, country_code, state=None):
         raise InputError("state must be a name or code")
     city = " ".join(city.split())
     state = " ".join(state.split()) if state else None
-    return city, country_code.strip().upper(), state or None
+    country_code = country_code.strip().upper() if country_code is not None else None
+    return city, country_code, state or None
 
 
 def _retry_delay(value, attempt):
@@ -88,7 +94,7 @@ def _invalid_constant(value):
 
 def get_json(path: str, params: dict):
     """GET with three attempts, bounded waits, TLS and no redirects."""
-    if path not in ("/geo/1.0/direct", "/data/2.5/air_pollution/history"):
+    if path not in ALLOWED_PATHS:
         raise InputError("Unsupported OpenWeather endpoint")
     key = os.getenv("OPENWEATHER_API_KEY", "").strip()
     if not key:

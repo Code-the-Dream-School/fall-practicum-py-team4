@@ -1,14 +1,19 @@
 # OpenWeather extraction and lookup caching
 
-The extract modules implement T4AIR-5 and T4AIR-8 using the function signatures
-already called by `pipeline.orchestration.run_extract_stage`.
+The extract modules implement T4AIR-5 and T4AIR-8 and are called by
+`pipeline.orchestration.run_extract_stage`.
 
 - `geocode_city(raw_dir, city, country_code, state=None)` returns `Coordinates`
-  with `lat`, `lon`, `retrieved_at`, and `from_cache` attributes.
+  with `lat`, `lon`, `retrieved_at`, `from_cache`, `country` and `state`.
+  Any country works; U.S. state names or codes are also accepted. Whether
+  gold stays U.S.-only and gains a `state` field is still a team decision.
 - `fetch_air_pollution_history(raw_dir, city, country_code, lat, lon, start, end,
   run_id, pipeline_run_id)` returns a `RawAirPollutionRecord`.
-- `raw_dir` is retained for compatibility. These functions do not write raw
-  files or persist air-pollution responses in PostgreSQL.
+- `raw_dir` is retained for compatibility and may be `None`. These functions
+  do not write raw files or persist air-pollution responses.
+- History window: orchestration requests the last 60 days plus 7 warm-up days
+  for the rolling average (`pipeline.retention.extraction_window`); gold keeps
+  readings newer than `now - 60 days` (`pipeline.retention.drop_expired`).
 
 ## Setup
 
@@ -77,8 +82,16 @@ arbitrary city. A valid empty API response is cached to avoid repeated misses.
 `RawAirPollutionRecord` preserves the complete source response in `payload`.
 Its metadata contains the city, country, requested coordinates, UTC time
 window, run identifiers, retrieval time, endpoint, source, schema version, and
-request parameters without the API key. `to_dict()` produces a dictionary with
-UTC ISO-8601 strings for the metadata timestamps. Source payload fields remain
+request parameters without the API key. Three views are available for the
+open "raw data storage" decision:
+
+| Call | Shape | Use |
+| --- | --- | --- |
+| `record.payload` | Original OpenWeather response | Store only the source data |
+| `record.to_raw_contract()` | `RawAirTrackerData` in `data_contracts.py` (`coord`, `list`, `request_params`, `retrieve_date`) | Matches the team contract |
+| `record.to_dict()` | Full envelope with run metadata; timestamps as UTC ISO-8601 strings | Keep lineage with each raw row |
+
+Source payload fields remain
 unchanged, including any fields not currently used by the transform.
 
 Historical requests require timezone-aware datetimes, a start on or after
@@ -104,13 +117,45 @@ python -m compileall services
 
 The extract tests mock HTTP and PostgreSQL connections. They cover input and
 response validation, raw metadata, retries, credential exclusion, lookup cache
-hits and expiry, ambiguity, and database failure handling. One test executes
-the repository's actual `run_extract_stage` function with the new extractors
-and a stubbed city reader. It loads that function alone because other runner
-imports are not yet implemented on `main`.
+hits and expiry, ambiguity, and database failure handling.
+`test_orchestration.py` imports the orchestration module directly and runs a
+full job with the real extractors over mocked HTTP.
 
-This does not verify a live OpenWeather call, a live PostgreSQL round trip, or
-the complete pipeline. The configuration, city reader, run tracking, storage,
-and transform modules imported by orchestration remain separate integration
-work. In particular, the proposed raw record shape must be connected to the
-team's transform and PostgreSQL raw persistence before full pipeline use.
+## Orchestration
+
+`run_pipeline_job(config, transform=..., load_raw=..., load_gold=..., run_store=...)`
+takes the data_contracts input configuration:
+
+```python
+{"cities": ["new york", "london, gb", "charlotte, nc, us", "28202"],
+ "date_range": "",          # "" = last 60 days (+7 warm-up); or "MM/DD/YYYY - MM/DD/YYYY"
+ "daily": True,             # one reading per day at time_of_day (UTC)
+ "time_of_day": "12:00"}
+```
+
+A city can be a bare name (provider's top match), `city, country`,
+`city, state, country`, or a ZIP code. A missing or empty `cities` stops the
+run with `ValueError`.
+
+It runs `geocodes` -> `extract` -> `load_raw(raw_records)` ->
+`transform(raw_records)` -> 60-day cut and lowercase (`finalize_gold`) ->
+`load_gold`. Those names and signatures are the ones in `data_contracts.py`
+and live in `pipeline/contracts.py`; `load_raw` and `transform` are passed in
+until T4AIR-15 and T4AIR-16 are merged. Raw records are `RawAirTrackerData`
+dicts plus `city` and `country`. Deployment target is AWS (Lambda +
+EventBridge + RDS PostgreSQL, logs in CloudWatch), per
+`docs/refined_architecture_diagram.md`; nothing here depends on Azure.
+
+Each run produces one `pipeline_runs` row:
+
+```json
+{"id": 101, "status": "succeeded", "records_added": 1440, "runs_time": 18.52, "created_at": "2026-10-19T20:00:00Z"}
+```
+
+These are the columns of the Supabase `pipeline_runs` table (checked
+2026-10-20). `run_store` needs `save(row) -> id`. `SupabaseRunStore(client)`
+inserts the row into `pipeline_runs` and returns the database id; the default
+`LoggingRunStore` only logs it.
+
+This does not verify a live OpenWeather call, a live PostgreSQL round trip,
+or the real transform and loaders.
