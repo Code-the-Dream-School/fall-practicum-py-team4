@@ -63,8 +63,6 @@ class RawAirTrackerData(BaseModel):
     list: list[ListItem]
     request_params: Optional[Parameters] = None
     retrieve_date: str
-    city: Optional[str] = None      # added by orchestration; the API does not return it, gold needs it
-    country: Optional[str] = None   # lowercase ISO code from geocoding, e.g. "us"
 
 # Raw Data Example
 
@@ -172,24 +170,21 @@ class GoldSchema(BaseModel):
     retrieve_date: datetime.date
     coordinates: Coordinates
     city: str
-    country: Optional[str] = None   # lowercase ISO code; gold_table.country
     readings: list[GoldListItem]
 
 # Golden Data Example
 
-golden_mateo = {
-    "locations": [
-        {
-            "name": "paris",
-            "lat": 48.85341,
-            "lon": 2.3488,
-            "elevation": 42.0,
-            "country": "france",
-            "region": "europe",         # continent part of the raw timezone, "Europe/Paris"
-            "population": 2138551
-        }
-    ]
-}
+golden_mateo = [
+    {
+        "name": "Paris",
+        "lat": 48.85341,
+        "lon": 2.3488,
+        "elevation": 42.0,
+        "country": "France",
+        "region": "Europe",
+        "population": 2138551
+    }
+]
 
 golden_data = {
     "retrieve_date": "2026-10-11",
@@ -197,8 +192,7 @@ golden_data = {
         "lon": -73.98,
         "lat": 40.74
     },
-    "city": "new york",
-    "country": "us",
+    "city": "New York",
     "readings": [
         {
             "aqi": 2,
@@ -212,7 +206,7 @@ golden_data = {
                 "pm10": 4.28, 
                 "nh3": 0.01
             }, 
-            "date_time": "2026-10-11T15:00:00Z"
+            "date_time": "2026-10-11 15:36:04.900413"
         }
     ]
 }
@@ -279,8 +273,6 @@ input = {
 }
 
 # all strings are converted to lowercase.
-# gold keeps the last 60 days of readings; each run requests 60 + 7 days so the
-# 7-day rolling AQI is complete on the oldest kept day (see pipeline/retention.py).
 # numbers are recorded as floats except when given integers by data source.
 # dates are converted to datetime objects, and ranges are split into two categories, start and end.
 # date ranges should specify one daily value, and capture the same time of day for entire range

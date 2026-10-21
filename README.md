@@ -58,7 +58,4 @@ python -m pytest
 
 ## Additional docs
 
-For the extract client and PostgreSQL lookup cache, see
-[OpenWeather extraction setup](./docs/reference/openweather_extraction_setup.md).
-
 Browse [Docs table of Contents](./docs/docs_toc.md) for the full categorized index.
