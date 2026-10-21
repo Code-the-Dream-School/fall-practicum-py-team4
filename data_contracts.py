@@ -1,7 +1,7 @@
 import datetime
 
-from pydantic import BaseModel, field_validator
-from typing import Optional
+from pydantic import BaseModel, Field, field_validator
+from typing import Literal, Optional
 
 # --- Raw Schemas ---
 
@@ -63,6 +63,8 @@ class RawAirTrackerData(BaseModel):
     list: list[ListItem]
     request_params: Optional[Parameters] = None
     retrieve_date: str
+    city: Optional[str] = None      # added by orchestration; the API does not return it, gold needs it
+    country: Optional[str] = None   # lowercase ISO code from geocoding, e.g. "us"
 
 # Raw Data Example
 
@@ -165,26 +167,33 @@ class GoldListItem(BaseModel):
     date_time: datetime.datetime
     aqi: int
     components: Components
+    # derived fields, see docs/reference/gold_data_dictionary.md
+    aqi_category: Literal["Good", "Fair", "Moderate", "Poor", "Very Poor"]   # T4AIR-20, from aqi
+    risk_score: float = Field(ge=0, allow_inf_nan=False)                     # T4AIR-20, pm2_5 / 15 * 100
+    aqi_rolling_7d: Optional[float] = Field(ge=1, le=5, allow_inf_nan=False) # T4AIR-21, None until 7 days of history
 
 class GoldSchema(BaseModel):
     retrieve_date: datetime.date
     coordinates: Coordinates
     city: str
+    country: Optional[str] = None   # lowercase ISO code; gold_table.country
     readings: list[GoldListItem]
 
 # Golden Data Example
 
-golden_mateo = [
-    {
-        "name": "Paris",
-        "lat": 48.85341,
-        "lon": 2.3488,
-        "elevation": 42.0,
-        "country": "France",
-        "region": "Europe",
-        "population": 2138551
-    }
-]
+golden_mateo = {
+    "locations": [
+        {
+            "name": "paris",
+            "lat": 48.85341,
+            "lon": 2.3488,
+            "elevation": 42.0,
+            "country": "france",
+            "region": "europe",         # continent part of the raw timezone, "Europe/Paris"
+            "population": 2138551
+        }
+    ]
+}
 
 golden_data = {
     "retrieve_date": "2026-10-11",
@@ -192,7 +201,8 @@ golden_data = {
         "lon": -73.98,
         "lat": 40.74
     },
-    "city": "New York",
+    "city": "new york",
+    "country": "us",
     "readings": [
         {
             "aqi": 2,
@@ -206,7 +216,10 @@ golden_data = {
                 "pm10": 4.28, 
                 "nh3": 0.01
             }, 
-            "date_time": "2026-10-11 15:36:04.900413"
+            "date_time": "2026-10-11T15:00:00Z",
+            "aqi_category": "Fair",
+            "risk_score": 21.666666666666668,
+            "aqi_rolling_7d": 2.25
         }
     ]
 }
@@ -272,7 +285,10 @@ input = {
     "time_of_day": "15:00"
 }
 
-# all strings are converted to lowercase.
+# all strings are converted to lowercase, except aqi_category, which keeps
+# OpenWeather's labels (Good, Fair, Moderate, Poor, Very Poor).
+# gold keeps the last 60 days of readings; each run requests 60 + 7 days so the
+# 7-day rolling AQI is complete on the oldest kept day (see pipeline/retention.py).
 # numbers are recorded as floats except when given integers by data source.
 # dates are converted to datetime objects, and ranges are split into two categories, start and end.
 # date ranges should specify one daily value, and capture the same time of day for entire range

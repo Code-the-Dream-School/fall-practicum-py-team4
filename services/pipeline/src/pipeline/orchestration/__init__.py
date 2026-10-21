@@ -1,225 +1,140 @@
+"""Run extract -> load raw -> transform -> load gold and record one pipeline_runs row.
+
+Input is the data_contracts input configuration. Stages use the contract
+signatures: geocodes(cities) -> dict, extract(...) -> list,
+load_raw(raw_records) -> None, transform(raw_records) -> list. Transform
+(T4AIR-16) and the loaders (T4AIR-15 raw, gold storage) are passed in until
+they are merged. The final log matches the pipeline_runs table.
+"""
+
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
+import itertools
+import logging
+import time
+from collections.abc import Callable
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
+from typing import Any, Protocol
 
-import pandas as pd
+from pipeline import contracts
+from pipeline.retention import drop_expired
+from pipeline.transform.enrich import enrich_gold_record
 
-from pipeline.common.config import settings
-from pipeline.common.logging import get_logger
-from pipeline.extract.cities import read_cities
-from pipeline.extract.geocoding import geocode_city
-from pipeline.extract.openweather_air_pollution import RawAirPollutionRecord, fetch_air_pollution_history
-from pipeline.load.storage import PublishResult, publish_outputs
-from pipeline.run_tracking import PipelineRunStatusUpdate, create_pipeline_run, update_pipeline_run_status
-from pipeline.transform.openweather_air_pollution_transform import build_gold_from_raw_records
+log = logging.getLogger(__name__)
 
-
-log = get_logger(__name__)
+RawRecord = dict[str, Any]  # RawAirTrackerData shape, with city and country
+GoldRecord = dict[str, Any]  # GoldSchema shape
 
 
 @dataclass(frozen=True)
-class PipelineRunResult:
-    pipeline_run_id: int
-    run_id: str
-    source: str
-    history_hours: int
-    raw_records: list[RawAirPollutionRecord]
-    gold_path: Path | None
-    azure_blob_path: str | None
-    postgres_table: str | None
-    rows: int
+class PipelineRunLog:
+    id: int | None  # assigned by pipeline_runs when the row is saved
+    status: str  # "succeeded" or "failed"
+    records_added: int
+    runs_time: float  # seconds
+    created_at: str  # UTC ISO-8601, e.g. 2026-10-19T20:00:00Z
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
-def ensure_output_directories() -> tuple[Path, Path]:
-    raw_dir = Path(settings.raw_dir)
-    gold_dir = Path(settings.gold_dir)
-    raw_dir.mkdir(parents=True, exist_ok=True)
-    gold_dir.mkdir(parents=True, exist_ok=True)
-    return raw_dir, gold_dir
+class RunStore(Protocol):
+    def save(self, row: dict[str, Any]) -> int:
+        """Insert one pipeline_runs row (without id) and return its new id."""
 
 
-def build_runtime_window(history_hours: int) -> tuple[datetime, datetime]:
-    end = datetime.now(timezone.utc)
-    start = end - timedelta(hours=history_hours)
-    return start, end
+class LoggingRunStore:
+    """Local stand-in: logs the row and numbers runs from 1."""
+
+    def __init__(self) -> None:
+        self._ids = itertools.count(1)
+
+    def save(self, row: dict[str, Any]) -> int:
+        return next(self._ids)
+
+
+class SupabaseRunStore:
+    """Writes to the Supabase pipeline_runs table (id, status, records_added, runs_time, created_at)."""
+
+    def __init__(self, supabase_client) -> None:
+        self._client = supabase_client
+
+    def save(self, row: dict[str, Any]) -> int:
+        response = self._client.table("pipeline_runs").insert(row).execute()
+        return response.data[0]["id"]
+
+
+def _iso_utc(value: datetime) -> str:
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def run_extract_stage(
-    raw_dir: Path, start: datetime, end: datetime, run_id: str, pipeline_run_id: int
-) -> tuple[list[RawAirPollutionRecord], int]:
-    cities_path = Path(settings.cities_file) if settings.cities_source == "file" else None
-    cities = read_cities(cities_path)
-    raw_records: list[RawAirPollutionRecord] = []
-
-    for city in cities:
-        coords = geocode_city(
-            raw_dir=raw_dir,
-            city=city.city,
-            country_code=city.country_code,
-            state=city.state,
-        )
-        raw_record = fetch_air_pollution_history(
-            raw_dir=raw_dir,
-            city=city.city,
-            country_code=city.country_code,
-            lat=coords.lat,
-            lon=coords.lon,
-            start=start,
-            end=end,
-            run_id=run_id,
-            pipeline_run_id=pipeline_run_id,
-        )
-        raw_records.append(raw_record)
-
-    return raw_records, len(cities)
+    settings: contracts.PipelineInput, *, geocodes=contracts.geocodes, extract=contracts.extract,
+) -> list[RawRecord]:
+    raw_records = []
+    for city, point in geocodes(settings.cities).items():
+        for record in extract(
+            point["lat"], point["lon"], "/history", settings.start, settings.end,
+            settings.daily, settings.time_of_day,
+        ):
+            # The pollution API does not return these; gold needs them.
+            raw_records.append({**record, "city": city, "country": point.get("country")})
+    return raw_records
 
 
-def run_transform_stage(raw_records: list[RawAirPollutionRecord]) -> pd.DataFrame:
-    return build_gold_from_raw_records(raw_records=raw_records)
+def finalize_gold(record: GoldRecord, now: datetime) -> GoldRecord:
+    """Apply the 60-day cut and the contract's lowercase rule to one gold record."""
+    result = {**record, "readings": drop_expired(record["readings"], now)}
+    for field in ("city", "country"):
+        if isinstance(record.get(field), str):
+            result[field] = record[field].lower()
+    return result
 
 
-def run_load_stage(
-    gold_df: pd.DataFrame, gold_dir: Path, table_name: str = "air_pollution_gold"
-) -> PublishResult:
-    return publish_outputs(gold_df=gold_df, gold_dir=gold_dir, table_name=table_name)
+def run_transform_stage(
+    raw_records: list[RawRecord], transform: Callable[[list], list], now: datetime,
+) -> list[GoldRecord]:
+    # Derived fields go on before the 60-day cut so the oldest kept day has a
+    # full rolling window. enrich_gold_record recalculates them, so it is safe
+    # even if the T4AIR-16 transform already added category and score.
+    return [finalize_gold(enrich_gold_record(record), now) for record in transform(raw_records)]
 
 
-def run_pipeline_job(source: str = "openweather", history_hours: int | None = None) -> PipelineRunResult:
-    resolved_history_hours = int(settings.history_hours if history_hours is None else history_hours)
-    raw_dir, gold_dir = ensure_output_directories()
-    start, end = build_runtime_window(resolved_history_hours)
-    run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    pipeline_run_id = create_pipeline_run(
-        run_id=run_id,
-        source=source,
-        history_hours=resolved_history_hours,
-        window_start_utc=start,
-        window_end_utc=end,
-    )
-
-    log.info(
-        "Pipeline starting",
-        extra={
-            "run_id": run_id,
-            "pipeline_run_id": pipeline_run_id,
-            "source": source,
-            "history_hours": resolved_history_hours,
-            "window_start_utc": start.isoformat(),
-            "window_end_utc": end.isoformat(),
-        },
-    )
-    city_count = 0
-    raw_records: list[RawAirPollutionRecord] = []
-
+def run_pipeline_job(
+    config: dict,
+    *,
+    transform: Callable[[list], list],
+    load_raw: Callable[[list], None],
+    load_gold: Callable[[list], None],
+    run_store: RunStore | None = None,
+    now: datetime | None = None,
+    geocodes=contracts.geocodes,
+    extract=contracts.extract,
+) -> PipelineRunLog:
+    store = run_store if run_store is not None else LoggingRunStore()
+    created = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    started = time.perf_counter()
+    records_added = 0
+    status = "failed"
     try:
-        log.info(
-            "Extract stage starting",
-            extra={"run_id": run_id, "pipeline_run_id": pipeline_run_id, "source": source},
-        )
-        raw_records, city_count = run_extract_stage(
-            raw_dir=raw_dir,
-            start=start,
-            end=end,
-            run_id=run_id,
-            pipeline_run_id=pipeline_run_id,
-        )
-        log.info(
-            "Extract stage complete",
-            extra={
-                "run_id": run_id,
-                "pipeline_run_id": pipeline_run_id,
-                "city_count": city_count,
-                "raw_response_count": len(raw_records),
-            },
-        )
-
-        log.info(
-            "Transform stage starting",
-            extra={"run_id": run_id, "pipeline_run_id": pipeline_run_id, "raw_response_count": len(raw_records)},
-        )
-        gold_df = run_transform_stage(raw_records=raw_records)
-        if not gold_df.empty:
-            gold_df["pipeline_run_id"] = pipeline_run_id
-        log.info(
-            "Transform stage complete",
-            extra={"run_id": run_id, "pipeline_run_id": pipeline_run_id, "gold_row_count": len(gold_df)},
-        )
-
-        log.info(
-            "Load stage starting",
-            extra={"run_id": run_id, "pipeline_run_id": pipeline_run_id, "gold_row_count": len(gold_df)},
-        )
-        publish_result = run_load_stage(gold_df=gold_df, gold_dir=gold_dir)
-        log.info(
-            "Load stage complete",
-            extra={
-                "run_id": run_id,
-                "pipeline_run_id": pipeline_run_id,
-                "postgres_table": publish_result.table_name,
-                "gold_path": str(publish_result.gold_path) if publish_result.gold_path is not None else None,
-                "azure_blob_path": publish_result.azure_blob_path,
-                "rows": publish_result.rows,
-            },
-        )
-
-        update_pipeline_run_status(
-            run_id,
-            PipelineRunStatusUpdate(
-                status="succeeded",
-                city_count=city_count,
-                raw_response_count=len(raw_records),
-                gold_row_count=len(gold_df),
-                finished_at=datetime.now(timezone.utc),
-            ),
-        )
-
-        result = PipelineRunResult(
-            pipeline_run_id=pipeline_run_id,
-            run_id=run_id,
-            source=source,
-            history_hours=resolved_history_hours,
-            raw_records=raw_records,
-            gold_path=publish_result.gold_path,
-            azure_blob_path=publish_result.azure_blob_path,
-            postgres_table=publish_result.table_name,
-            rows=len(gold_df),
-        )
-
-        log.info(
-            "Pipeline succeeded",
-            extra={
-                "run_id": run_id,
-                "pipeline_run_id": result.pipeline_run_id,
-                "city_count": city_count,
-                "raw_response_count": len(raw_records),
-                "gold_row_count": result.rows,
-                "postgres_table": result.postgres_table,
-                "gold_path": str(result.gold_path) if result.gold_path is not None else None,
-                "azure_blob_path": result.azure_blob_path,
-            },
-        )
-        return result
-    except Exception as exc:
-        log.exception(
-            "Pipeline failed",
-            extra={
-                "run_id": run_id,
-                "pipeline_run_id": pipeline_run_id,
-                "source": source,
-                "city_count": city_count or None,
-                "raw_response_count": len(raw_records) or None,
-            },
-        )
-        update_pipeline_run_status(
-            run_id,
-            PipelineRunStatusUpdate(
-                status="failed",
-                city_count=city_count or None,
-                raw_response_count=len(raw_records) or None,
-                error_message=str(exc),
-                finished_at=datetime.now(timezone.utc),
-            ),
-        )
+        settings = contracts.parse_input(config, created)
+        raw_records = run_extract_stage(settings, geocodes=geocodes, extract=extract)
+        load_raw(raw_records)
+        gold_records = run_transform_stage(raw_records, transform, created)
+        load_gold(gold_records)
+        records_added = sum(len(record["readings"]) for record in gold_records)
+        status = "succeeded"
+    except Exception:
+        log.exception("Pipeline failed")
         raise
+    finally:
+        row = {
+            "status": status,
+            "records_added": records_added,
+            "runs_time": round(time.perf_counter() - started, 2),
+            "created_at": _iso_utc(created),
+        }
+        run = PipelineRunLog(id=store.save(row), **row)
+        log.info("pipeline_runs row", extra={"pipeline_run": run.to_dict()})
+    return run
