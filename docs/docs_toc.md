@@ -25,7 +25,6 @@ Use these docs for field-level details, schemas, and API artifacts.
 
 - `reference/openweather_api_overview.md`
 - `reference/openweather_environmental_api_fields_reference.md`
-- `reference/openweather_extraction_setup.md`
 
 ## Milestones
 
