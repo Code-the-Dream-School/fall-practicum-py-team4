@@ -158,15 +158,12 @@ class GoldCities(BaseModel):
 
 # OpenWeather
 
-class GoldComponents(BaseModel):
-    co: float
-    no2: float
-    pm2_5: float
-
 class GoldListItem(BaseModel):
     date_time: datetime.datetime
     aqi: int
-    components: GoldComponents
+    co: float
+    no2: float
+    pm2_5: float
 
 class GoldAirData(BaseModel):
     latitude: float
