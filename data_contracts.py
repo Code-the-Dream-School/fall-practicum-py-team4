@@ -267,7 +267,7 @@ input = {
 }
 
 # all strings are converted to lowercase.
-# numbers are recorded as floats except when given integers by data source.
+# numbers are recorded as floats, max 4 decimal places, except when given integers by data source.
 # dates are converted to datetime objects, and ranges are split into two categories, start and end.
 # missing or invalid values are replaced with NaN, and the row is removed from the dataframe during transform
 # missing city value will stop the pipeline from running and request user input. (if we have user input)
