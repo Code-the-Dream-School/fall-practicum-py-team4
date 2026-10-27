@@ -1,6 +1,6 @@
 import datetime
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel
 from typing import Optional
 
 # --- Raw Schemas ---
@@ -58,11 +58,26 @@ class Coordinates(BaseModel):
     lon: float
     lat: float
 
-class RawAirTrackerData(BaseModel):
+class RawOpenWeather(BaseModel):
     coord: Coordinates
     list: list[ListItem]
-    request_params: Optional[Parameters] = None
     retrieve_date: str
+
+# City
+
+class RawCityRecord(BaseModel):
+    city: str
+    payload: RawOpenMeteo
+    retrieve_date: str
+
+# Air Pollution Record
+
+class RawAirPollutionRecord(BaseModel):
+    city: str
+    target_date: str
+    data: RawOpenWeather
+    retrieve_date: str
+    request_params: Optional[Parameters] = None
 
 # Raw Data Example
 
@@ -166,12 +181,15 @@ class GoldListItem(BaseModel):
     pm2_5: float
 
 class GoldAirData(BaseModel):
-    latitude: float
     longitude: float
+    latitude: float
     city: str
     country: str
     readings: list[GoldListItem]
     retrieve_date: datetime.date
+    sentiment_label: str
+    running_average: float
+    city_id: int
 
 # Golden Data Example
 
@@ -207,13 +225,11 @@ gold_air_data = {
 
 # --- Function Signatures ---
 
-def geocodes(cities: list) -> dict:
-    # *** these should be parsed during orchestration? ***
-    # takes a list of cities/zipcodes and returns the latitude and longitude for each as a dictionary
+def geocodes(city: str) -> dict:
+    # takes a city and returns the a payload including latitude, longitude, population, and elevation as a dictionary
     return{}
 
 def get_unix(time: str, start_date: str) -> int:
-    # *** these should be parsed and converted during orchestration ***
     # takes a time and start date to determine the unix time code
     # try/except block to determine time and start_date are correct types
     unix_code = 0
@@ -252,14 +268,13 @@ def transform(raw_records: list) -> list:
 
 # --- Input Configuration ---
 
-cities: list[str]                       # accepts city names and zipcodes
+city: str                               # accepts city names and zipcodes
 date_range: Optional[str] = ""          # format YYYY-MM-DD for past 60 days, delimiter " - "
 
 # Input Example
 
 input = {
-    "cities": ['bogota, colombia', 'warsaw, poland', 'seoul, south korea', 'accra, ghana', 'bangkok, thailand', 
-               'new york, ny, us', 'london, england', 'melbourne, australia', 'los angeles, ca, us', 'cairo, egypt'],
+    "city": 'bogota, colombia',
     "date_range": "2026-08-26 - 2026-10-25"
 }
 
