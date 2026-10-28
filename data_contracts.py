@@ -50,10 +50,6 @@ class ListItem(BaseModel):
     main: dict[str,float]
     components: Components
 
-class Parameters(BaseModel):
-    start: int                      # unix time, UTC time zone
-    end: int                        # unix time, UTC time zone
-
 class Coordinates(BaseModel):
     lon: float
     lat: float
@@ -71,6 +67,10 @@ class RawCityRecord(BaseModel):
     retrieve_date: str
 
 # Air Pollution Record
+
+class Parameters(BaseModel):
+    start: int                      # unix time, UTC time zone
+    end: int                        # unix time, UTC time zone
 
 class RawAirPollutionRecord(BaseModel):
     city: str
@@ -158,20 +158,33 @@ raw_data = {
     ]
 }
 
-# --- Golden Schema ---
+# Raw Cities
+raw_city = {
+    "city": "New York",
+    "payload": {},
+    "retrieve_date": "2026-10-11"
+}
 
-# open-meteo
+# Raw Air
+raw_air_data = {
+    "city": "New York",
+    "target_date": "2025-05-01",
+    "data": {},
+    "retrieve_date": "2026-10-11",
+    "start": 1746057600,
+    "end": 1746061200          
+}
+
+# --- Golden Schema ---
 
 class GoldCities(BaseModel):
     city_name: str
     state: str
-    country_code: str
+    country: str
     lat: float
     lon: float
     population: int
     elevation: float
-
-# OpenWeather
 
 class GoldAirData(BaseModel):
     longitude: float
@@ -193,7 +206,7 @@ class GoldAirData(BaseModel):
 gold_cities = {
     "city_name": "Paris",
     "state": "Île-de-France Region",
-    "country_code": "FR",
+    "country": "France",
     "lat": 48.85341,
     "lon": 2.3488,
     "population": 2138551,
@@ -205,12 +218,11 @@ gold_air_data = {
     "latitude": 40.74,
     "city": "New York",
     "country": "United States",
-    "date_time": "2026-10-11 15:36:04.900413",
+    "date_time": "2025-05-01T21:00:00",
     "co": 130.95, 
     "no2": 0.96, 
     "pm2_5": 3.25,
     "aqi": 2,
-    "hour": "13:00",
     "retrieve_date": "2026-10-11",
     "sentiment_label": 'fair',
     "running_average": 2.67,
