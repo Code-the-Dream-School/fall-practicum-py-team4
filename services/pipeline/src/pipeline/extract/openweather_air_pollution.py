@@ -1,6 +1,7 @@
 import os, requests, logging
 from dotenv import load_dotenv
 from datetime import datetime, timezone
+# from data_contracts import RawAirPollutionRecord
 # consider the use of dateutil.parser to parse virtually any date format? 
 
 logger = logging.getLogger(__name__)
@@ -71,15 +72,26 @@ def extract(city_name: str, latitude: float, longitude: float, date: str) -> dic
     payload = response.json()
     logger.info("Successfully retrieved air pollution history for %s", city_name)
 
-    # package the result like RawOpenWeather in data_contracts.py
+    # package the result like RawAirPollutionRecord in data_contracts.py
     # we need to move contracts.py to the root folder, so we can use pydantic to validate the data
     record = {
         "city": city_name,
         "target_date": date,
         "data": payload,
-        "start": start_unix,
-        "end": end_unix,
+        "request_params": {
+            "start": start_unix,
+            "end": end_unix,
+        },
         "retrieve_date": datetime.now(timezone.utc).strftime("%Y-%m-%d")   
     }
+
+    # # Validate everything at once
+    # try:
+    #     validated_record = RawAirPollutionRecord(**record_data)
+    # except Exception as e:
+    #     logger.error("Data validation failed for city %s: %s", city_name, e)
+    #     raise RuntimeError(f"OpenWeather response failed Pydantic validation: {e}") from e
+
+    # return validated_record.model_dump()
 
     return record
