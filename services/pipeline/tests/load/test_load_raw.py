@@ -62,8 +62,10 @@ SAMPLE_POLLUTION_DATA = {
             }
         ]
     },
-    "start": 1577836800,
-    "end": 1577923200,
+    "request_params": {
+        "start": 1577836800,
+        "end": 1577923200,
+    },
     "retrieve_date": "10/26/2026"
 }
 

@@ -89,17 +89,16 @@ def load_raw_air_pollution(supabase_client: Client, data: dict):
     payload = data.get("data")
     retrieve_date = data.get("retrieve_date")
     target_date = data.get("target_date")
-    start = data.get("start")
-    end = data.get("end")
+    request_params = data.get("request_params") or {}
+    start = request_params.get("start")
+    end = request_params.get("end")
 
     # Inserts a record to the DB
     try: 
         record = {
             "city": city,
-            # should we store this as a timestamp? or keep it as a string for human reading?
             "target_date": target_date,
             "data": payload,
-            # should the extract function take care of this date? or should the load function do it?
             "start": start,
             "end": end,
             "retrieve_date": retrieve_date
