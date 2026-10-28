@@ -1,12 +1,10 @@
 import os
 import pytest
 from dotenv import load_dotenv
-from supabase import create_client
+from supabase import create_client, Client
 from unittest.mock import MagicMock
 from pipeline.load.load_raw import load_raw_cities, load_raw_air_pollution
 
-load_dotenv()
-supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
 # Test Parameters
 TEST_CITY = 'Charlotte'
@@ -69,43 +67,59 @@ SAMPLE_POLLUTION_DATA = {
     "retrieve_date": "10/26/2026"
 }
 
+@pytest.fixture
+def real_supabase_client():
+    """Fixture to safely initialize a real Supabase client only for integration tests."""
+    load_dotenv()
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_KEY")
+    if not url or not key:
+        pytest.skip("Supabase credentials not available for integration tests")
+    return create_client(url, key)
+
 @pytest.fixture(autouse=True)
 def cleanup_test_data():
     """Fixture to clean up Supabase test data after each integration test runs."""
     yield
-    try:
-        supabase.table('raw_cities').delete().eq("city", TEST_CITY).execute()
-        supabase.table('raw_air_pollution').delete().eq('city', TEST_CITY).eq('target_date', TEST_DATE).execute()
-    except Exception as e:
-        print(f"Warning: Cleanup failed: {e}")
+    load_dotenv()
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_KEY")
+    if url and key:
+        try:
+            client = create_client(url, key)
+            client.table('raw_cities').delete().eq("city", TEST_CITY).execute()
+            client.table('raw_air_pollution').delete().eq('city', TEST_CITY).eq('target_date', TEST_DATE).execute()
+        except Exception as e:
+            print(f"Warning: Cleanup failed: {e}")
 
 # --- Tests for load_raw_cities ---
 
 @pytest.mark.integration
-def test_normal_load():
+def test_normal_load(real_supabase_client):
     """Test 1: Test Normal load for raw_cities"""
-    response = load_raw_cities(supabase, SAMPLE_CITY_DATA)
+    response = load_raw_cities(real_supabase_client, SAMPLE_CITY_DATA)
     assert response is not None
     inserted_row = response.data[0]
     assert inserted_row['city'] == TEST_CITY
 
 @pytest.mark.integration
-def test_idempotency_cities():
+def test_idempotency_cities(real_supabase_client):
     """Test 2: Test Idempotency for raw_cities"""
-    load_raw_cities(supabase, SAMPLE_CITY_DATA)
-    response = load_raw_cities(supabase, SAMPLE_CITY_DATA)
+    load_raw_cities(real_supabase_client, SAMPLE_CITY_DATA)
+    response = load_raw_cities(real_supabase_client, SAMPLE_CITY_DATA)
     assert response is not None
 
 @pytest.mark.integration
-def test_empty_input_raises_error_cities():
+def test_empty_input_raises_error_cities(real_supabase_client):
     """Test 3: Raises a clear ValueError if citi input data is empty."""
     with pytest.raises(ValueError, match="Invalid or empty data payload"):
-        load_raw_cities(supabase, data={})
+        load_raw_cities(real_supabase_client, data={})
 
 @pytest.mark.unit
 def test_load_raw_cities_mocked():
-    # Arrange: Create a mock Supabase client chain
-    mock_supabase = MagicMock()
+    """Test 4: Unit Test with mock response"""
+    # Create a mock Supabase client chain
+    mock_supabase = MagicMock(spec=Client)
     mock_response = MagicMock()
     mock_response.data = [{"city": TEST_CITY, "payload": SAMPLE_CITY_DATA["payload"]}]
     
@@ -122,9 +136,9 @@ def test_load_raw_cities_mocked():
 # --- Tests for load_raw_air_pollution ---
 
 @pytest.mark.integration
-def test_normal_load_pollution():
+def test_normal_load_pollution(real_supabase_client):
     """Test 1: Normal load for raw air pollution"""
-    response = load_raw_air_pollution(supabase, SAMPLE_POLLUTION_DATA,)
+    response = load_raw_air_pollution(real_supabase_client, SAMPLE_POLLUTION_DATA,)
     assert response is not None
     inserted_row = response.data[0]
     assert inserted_row["city"] == TEST_CITY
@@ -132,24 +146,24 @@ def test_normal_load_pollution():
 
 
 @pytest.mark.integration
-def test_load_twice_idempotency_pollution():
+def test_load_twice_idempotency_pollution(real_supabase_client):
     """Test 2: Idempotency for raw air pollution"""
-    load_raw_air_pollution(supabase, SAMPLE_POLLUTION_DATA)
-    response = load_raw_air_pollution(supabase, SAMPLE_POLLUTION_DATA)
+    load_raw_air_pollution(real_supabase_client, SAMPLE_POLLUTION_DATA)
+    response = load_raw_air_pollution(real_supabase_client, SAMPLE_POLLUTION_DATA)
     assert response is not None
 
 
 @pytest.mark.integration
-def test_empty_input_raises_error_pollution():
+def test_empty_input_raises_error_pollution(real_supabase_client):
     """Test 3: Raises ValueError if pollution input data is empty."""
     with pytest.raises(ValueError, match="Invalid or empty data payload"):
-        load_raw_air_pollution(supabase, data={})
+        load_raw_air_pollution(real_supabase_client, data={})
 
 
 @pytest.mark.unit
 def test_load_raw_pollution_mocked():
-    """Unit test with mocks for load_raw_air_pollution."""
-    mock_supabase = MagicMock()
+    """Test 4: Unit test with mocks for load_raw_air_pollution."""
+    mock_supabase = MagicMock(spec=Client)
     mock_response = MagicMock()
     mock_response.data = [{"city": TEST_CITY, "target_date": TEST_DATE}]
     

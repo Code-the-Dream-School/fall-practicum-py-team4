@@ -9,15 +9,6 @@ load_dotenv()
 # Logging client for tracking successful data loads and debugging failures.
 LOG = logging.getLogger(__name__)
 
-# Initialize Supabase client
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-
-if not SUPABASE_URL or not SUPABASE_KEY:
-    raise RuntimeError("Missing SUPABASE_URL or SUPABASE_KEY in environment variables.")
-
-supabase_client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
 def load_raw_cities(supabase_client: Client, data: dict):
     """
     Inserts raw city geocoding responses into raw_table using the Supabase Python Client.
@@ -26,6 +17,14 @@ def load_raw_cities(supabase_client: Client, data: dict):
         The raw_table must have a unique constraint on city to ensure that running the loader
         multiple times for the same location performs an upsert instead of inserting duplicates.
     """
+
+    if (
+        not supabase_client
+        or not (isinstance(supabase_client, Client))
+    ):
+        LOG.warning("Invalid or missing Supabase client provided.")
+        raise ValueError("A valid Supabase client instance is required to load data.")
+
 
     # Checks if data exists and is formatted as a dict. 
     if (
@@ -45,7 +44,7 @@ def load_raw_cities(supabase_client: Client, data: dict):
         record = {
             "city": city,
             "payload": data['payload'],
-            "retrieve_date": retrieve_date,  
+            "extracted_at": retrieve_date,  
         }
 
         # Upsert, so it ensures running twice creates no duplicates (unique index on city)
@@ -74,6 +73,13 @@ def load_raw_air_pollution(supabase_client: Client, data: dict):
         for the location and day performs an upsert instead of inserting duplicates.
     """
 
+    if (
+        not supabase_client
+        or not (isinstance(supabase_client, Client))
+    ):
+        LOG.warning("Invalid or missing Supabase client provided.")
+        raise ValueError("A valid Supabase client instance is required to load data.")
+
     # Checks if extract() response exists, is formatted as a dict and has a 'list' key (contains openweather payload). 
     if (
         not data
@@ -101,7 +107,7 @@ def load_raw_air_pollution(supabase_client: Client, data: dict):
             "data": payload,
             "start": start,
             "end": end,
-            "retrieve_date": retrieve_date
+            "extracted_at": retrieve_date
         }
 
         # Upsert, so it ensures running twice creates no duplicates (requires unique index on city and target_date)

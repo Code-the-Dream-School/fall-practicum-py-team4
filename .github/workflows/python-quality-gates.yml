@@ -46,6 +46,4 @@ jobs:
       - name: Run pipeline tests
         env:
           PYTHONPATH: services/pipeline
-          SUPABASE_URL: "https://mock.supabase.co"
-          SUPABASE_KEY: "mock-supabase-key"
-        run: python -m pytest services/pipeline/tests -m unit
+        run: python -m pytest services/pipeline/tests -m unit "not integration"
