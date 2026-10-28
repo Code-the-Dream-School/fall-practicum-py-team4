@@ -1,22 +1,15 @@
-import json
 from datetime import datetime, timezone
+from unittest.mock import Mock
 
 import pytest
 import requests
 
-from pipeline.contracts import extract
-from pipeline.extract import openweather_http as http
-from pipeline.extract.openweather_http import (
-    ConfigurationError,
-    OpenWeatherError,
-)
+from pipeline.extract import openweather_air_pollution as air
 
 FAKE_KEY = "fake-key-123"
-START = datetime(2025, 1, 1, tzinfo=timezone.utc)
-END = datetime(2025, 1, 2, tzinfo=timezone.utc)
 
-GOOD_PAYLOAD = {
-    "coord": {"lon": -74.006, "lat": 40.7128},
+PAYLOAD = {
+    "coord": {"lat": 40.7128, "lon": -74.006},
     "list": [
         {
             "dt": 1735689600,
@@ -36,206 +29,104 @@ GOOD_PAYLOAD = {
 }
 
 
-class FakeResponse:
-    def __init__(self, status_code=200, body=b""):
-        self.status_code = status_code
-        self.body = body
-        self.headers = {}
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        return False
-
-    def iter_content(self, chunk_size):
-        yield self.body
-
-
-def good_response(payload=GOOD_PAYLOAD):
-    return FakeResponse(200, json.dumps(payload).encode())
-
-
-def use_fake_responses(monkeypatch, *responses):
-    calls = []
-    queue = list(responses)
-
-    def fake_get(url, **kwargs):
-        calls.append({"url": url, **kwargs})
-        if not queue:
-            pytest.fail("Unexpected HTTP request")
-        item = queue.pop(0)
-        if isinstance(item, Exception):
-            raise item
-        return item
-
-    monkeypatch.setattr(http.requests, "get", fake_get)
-    return calls
-
-
-@pytest.fixture(autouse=True)
-def setup(monkeypatch):
+@pytest.fixture
+def mock_get(monkeypatch):
     monkeypatch.setenv("OPENWEATHER_API_KEY", FAKE_KEY)
-    monkeypatch.delenv("OPENWEATHER_TIMEOUT_SECONDS", raising=False)
-    monkeypatch.setattr(http.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(air, "load_dotenv", lambda: None)
+
+    response = Mock(status_code=200)
+    response.json.return_value = PAYLOAD
+    get = Mock(return_value=response)
+    monkeypatch.setattr(air.requests, "get", get)
+    return get
 
 
-def run_extract(**changes):
-    args = {
-        "latitude": 40.7128,
-        "longitude": -74.006,
-        "endpoint": "/history",
-        "start_date": START,
-        "end_date": END,
-        "daily": False,
-    }
-    args.update(changes)
-    return extract(**args)
+def test_successful_extract(mock_get):
+    result = air.extract("New York", 40.7128, -74.006, "2025-01-01")
 
-
-def test_successful_extract(monkeypatch):
-    calls = use_fake_responses(monkeypatch, good_response())
-
-    result = run_extract()
-
-    assert isinstance(result, list)
-    assert len(result) == 1
-    record = result[0]
-    assert record["coord"] == GOOD_PAYLOAD["coord"]
-    assert record["list"] == GOOD_PAYLOAD["list"]
-    assert record["request_params"] == {
-        "start": int(START.timestamp()),
-        "end": int(END.timestamp()),
-    }
-    datetime.strptime(record["retrieve_date"], "%Y-%m-%d")
-
-    assert len(calls) == 1
-    assert calls[0]["url"] == (
-        http.BASE_URL + "/data/2.5/air_pollution/history"
+    start = int(
+        datetime(2025, 1, 1, tzinfo=timezone.utc).timestamp()
     )
-    assert calls[0]["params"] == {
-        "lat": 40.7128,
-        "lon": -74.006,
-        "start": int(START.timestamp()),
-        "end": int(END.timestamp()),
-        "appid": FAKE_KEY,
+    end = int(
+        datetime(2025, 1, 2, tzinfo=timezone.utc).timestamp()
+    )
+
+    assert isinstance(result, dict)
+    assert set(result) == {
+        "city", "target_date", "data", "request_params", "retrieve_date"
     }
+    assert result["city"] == "New York"
+    assert result["target_date"] == "2025-01-01"
+    assert result["data"] == PAYLOAD
+    assert result["request_params"] == {"start": start, "end": end}
+    datetime.strptime(result["retrieve_date"], "%Y-%m-%d")
+
+    mock_get.assert_called_once_with(
+        air.AIR_POLLUTION_URL + "/history",
+        params={
+            "lat": 40.7128,
+            "lon": -74.006,
+            "appid": FAKE_KEY,
+            "start": start,
+            "end": end,
+        },
+        timeout=30,
+    )
 
 
-def test_empty_measurements(monkeypatch):
-    payload = {"coord": GOOD_PAYLOAD["coord"], "list": []}
-    use_fake_responses(monkeypatch, good_response(payload))
+def test_invalid_date(mock_get):
+    with pytest.raises(ValueError, match="Invalid format"):
+        air.extract("New York", 40.7128, -74.006, "not-a-date")
 
-    result = run_extract()
-
-    assert len(result) == 1
-    assert result[0]["coord"] == payload["coord"]
-    assert result[0]["list"] == []
+    mock_get.assert_not_called()
 
 
-def test_invalid_endpoint(monkeypatch):
-    calls = use_fake_responses(monkeypatch)
-
-    with pytest.raises(ValueError, match="endpoint"):
-        run_extract(endpoint="/invalid")
-
-    assert calls == []
-
-
-def test_reversed_date_range(monkeypatch):
-    calls = use_fake_responses(monkeypatch)
-
-    with pytest.raises(ValueError, match="start_date"):
-        run_extract(start_date=END, end_date=START)
-
-    assert calls == []
-
-
-@pytest.mark.parametrize("missing_date", ["start_date", "end_date"])
-def test_history_requires_both_dates(monkeypatch, missing_date):
-    calls = use_fake_responses(monkeypatch)
-
-    result = run_extract(**{missing_date: None})
-
-    assert result == []
-    assert calls == []
-
-
-@pytest.mark.parametrize("key", [None, "", "   "])
-def test_missing_or_blank_api_key(monkeypatch, key):
+@pytest.mark.parametrize("key", [None, ""])
+def test_missing_api_key(monkeypatch, mock_get, key):
     if key is None:
         monkeypatch.delenv("OPENWEATHER_API_KEY", raising=False)
     else:
         monkeypatch.setenv("OPENWEATHER_API_KEY", key)
-    calls = use_fake_responses(monkeypatch)
 
-    with pytest.raises(ConfigurationError):
-        run_extract()
+    with pytest.raises(ValueError, match="Missing OPENWEATHER_API_KEY"):
+        air.extract("New York", 40.7128, -74.006, "2025-01-01")
 
-    assert calls == []
-
-
-@pytest.mark.parametrize("value", ["abc", "0", "-5"])
-def test_bad_timeout_setting(monkeypatch, value):
-    monkeypatch.setenv("OPENWEATHER_TIMEOUT_SECONDS", value)
-    calls = use_fake_responses(monkeypatch)
-
-    with pytest.raises(ConfigurationError):
-        run_extract()
-
-    assert calls == []
+    mock_get.assert_not_called()
 
 
-@pytest.mark.parametrize("status", [429, 500])
-def test_http_error_fails_after_retries(monkeypatch, status):
-    calls = use_fake_responses(
-        monkeypatch,
-        FakeResponse(status),
-        FakeResponse(status),
-        FakeResponse(status),
-    )
+def test_empty_measurements(mock_get):
+    payload = {"coord": PAYLOAD["coord"], "list": []}
+    mock_get.return_value.json.return_value = payload
 
-    with pytest.raises(OpenWeatherError):
-        run_extract()
+    result = air.extract("New York", 40.7128, -74.006, "2025-01-01")
 
-    assert len(calls) == 3
+    assert result["data"] == payload
 
 
-def test_connection_error_fails_after_retries(monkeypatch):
-    calls = use_fake_responses(
-        monkeypatch,
-        requests.ConnectionError("no connection"),
-        requests.ConnectionError("no connection"),
-        requests.ConnectionError("no connection"),
-    )
+@pytest.mark.parametrize("status", [401, 429, 500])
+def test_http_error(mock_get, status):
+    mock_get.return_value.status_code = status
 
-    with pytest.raises(OpenWeatherError):
-        run_extract()
+    with pytest.raises(RuntimeError, match=f"HTTP {status}"):
+        air.extract("New York", 40.7128, -74.006, "2025-01-01")
 
-    assert len(calls) == 3
-
-
-def test_invalid_json(monkeypatch):
-    use_fake_responses(monkeypatch, FakeResponse(200, b"not json"))
-
-    with pytest.raises(OpenWeatherError, match="invalid JSON"):
-        run_extract()
+    mock_get.return_value.json.assert_not_called()
 
 
 @pytest.mark.parametrize(
-    "payload",
-    [
-        [1, 2, 3],
-        {"coord": {}},
-        {"list": []},
-        {
-            "coord": {},
-            "list": [{"dt": 1735689600, "main": {"aqi": 2}}],
-        },
-    ],
+    "error_type", [requests.ConnectionError, requests.Timeout]
 )
-def test_malformed_payload(monkeypatch, payload):
-    use_fake_responses(monkeypatch, good_response(payload))
+def test_connection_failure(mock_get, error_type):
+    mock_get.side_effect = error_type("test failure")
 
-    with pytest.raises(OpenWeatherError):
-        run_extract()
+    with pytest.raises(RuntimeError, match="Could not reach OpenWeather"):
+        air.extract("New York", 40.7128, -74.006, "2025-01-01")
+
+
+def test_invalid_json(mock_get):
+    mock_get.return_value.json.side_effect = requests.exceptions.JSONDecodeError(
+        "Invalid JSON", "not json", 0
+    )
+
+    with pytest.raises(requests.exceptions.JSONDecodeError):
+        air.extract("New York", 40.7128, -74.006, "2025-01-01")
