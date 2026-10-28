@@ -173,54 +173,48 @@ class GoldCities(BaseModel):
 
 # OpenWeather
 
-class GoldListItem(BaseModel):
-    date_time: datetime.datetime
-    aqi: int
-    co: float
-    no2: float
-    pm2_5: float
-
 class GoldAirData(BaseModel):
     longitude: float
     latitude: float
     city: str
     country: str
-    readings: list[GoldListItem]
-    retrieve_date: datetime.date
+    date_time: str
+    co: float
+    no2: float
+    pm2_5: float
+    aqi: int
+    retrieve_date: str
     sentiment_label: str
     running_average: float
     city_id: int
 
 # Golden Data Example
 
-gold_cities = [
-    {
-        "city_name": "Paris",
-        "state": "Île-de-France Region",
-        "country_code": "FR",
-        "lat": 48.85341,
-        "lon": 2.3488,
-        "population": 2138551,
-        "elevation": 42.0
-    }
-]
+gold_cities = {
+    "city_name": "Paris",
+    "state": "Île-de-France Region",
+    "country_code": "FR",
+    "lat": 48.85341,
+    "lon": 2.3488,
+    "population": 2138551,
+    "elevation": 42.0
+}
 
 gold_air_data = {
-    "lon": -73.98,
-    "lat": 40.74,
+    "longitude": -73.98,
+    "latitude": 40.74,
     "city": "New York",
     "country": "United States",
-    "readings": [
-        {
-            "aqi": 2,
-            "co": 130.95, 
-            "no2": 0.96, 
-            "pm2_5": 3.25,
-            "date_time": "2026-10-11 15:36:04.900413",
-            "hour": "13:00"
-        }
-    ],
+    "date_time": "2026-10-11 15:36:04.900413",
+    "co": 130.95, 
+    "no2": 0.96, 
+    "pm2_5": 3.25,
+    "aqi": 2,
+    "hour": "13:00",
     "retrieve_date": "2026-10-11",
+    "sentiment_label": 'fair',
+    "running_average": 2.67,
+    "city_id": 3
 }
 
 # --- Function Signatures ---
@@ -235,22 +229,13 @@ def get_unix(time: str, start_date: str) -> int:
     unix_code = 0
     return unix_code
 
-def extract(latitude: float, longitude: float, start_date: str, end_date: str, endpoint='/') -> list: 
-    # latitude and longitude coordinates from the geocodes function *** (this comes from orchestration?) ***
-    # endpoint directs the call to the present, forcast, or history data for the given point *** (do we need forcast?) ***
-    # start_date and end_date are optional and are used to set the dates when requesting the 'history' endpoint
-    # default dates should be set to 60 days ago up to today *** (this may come from orchestration) ***
-    # extracts data from openweathermap and uses the raw schema to validate values 
-    # requires start and end dates if endpoint is set to 'history'
-    # check for value and key errors with try/except blocks. write message to user to correct errors
-    # when using 'history' endpoint, start_date and end_date are required in UNIX format
-    # returns a list of instances of raw data
+def extract(city_name: str, latitude: float, longitude: float, date: str) -> dict:
 
-    if endpoint == "/history" and (start_date == None or end_date == None):
-        print("When using the '/history' endpoint, start and end dates must be specified")
-        return[]
-    
-    return []
+    # city_name: for human reference (instead of reading lat and lon)
+    # we are only using the /history endpoint right now, so no endpoint argument.
+    # instead of start_date and end_date, use a single date (YYYY-MM_DD), as the function automatically fetches the 24 chunks that span each day.
+    # return a dict instead of a list (this will actually later be a RawAirPollutionRecord)
+    return {}
 
 def load_raw(raw_records: list) -> None:
     # takes a list of raw data instances and loads the raw data into the database
