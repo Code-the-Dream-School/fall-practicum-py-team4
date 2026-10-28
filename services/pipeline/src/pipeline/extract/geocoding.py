@@ -45,14 +45,20 @@ def geocodes(city: str) -> dict:
         "retrieve_date": retrieve_date,
     }
 
-    # we need to move contracts.py to the root folder, so we can use pydantic to validate the data
+    # # we need to move contracts.py to the root folder, so we can use pydantic to validate the data
     # # this should be a RawCityRecord
-    # record = RawCityRecord(
-    #     city = city_name,
-    #     payload = data,
-    #     retrieve_date = datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-    # )
-    #
-    #return RawCityRecord
+    # try:
+    #     record = RawCityRecord(
+    #         city = city_name,
+    #         payload = data,
+    #         retrieve_date = datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+    #     )
+    # except Exception as e:
+    #     logger.error("Data validation failed for %s: %s", city_name, e)
+    #     raise RuntimeError(f"City response failed Pydantic validation: {e}") from e
+
+    # logger.info("Successfully validated city record for %s", city_name)
+
+    # return record.model_dump()
 
     return results
