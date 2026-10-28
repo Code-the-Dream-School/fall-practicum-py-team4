@@ -46,4 +46,4 @@ jobs:
       - name: Run pipeline tests
         env:
           PYTHONPATH: services/pipeline
-        run: python -m pytest services/pipeline/tests -m unit "not integration"
+        run: python -m pytest services/pipeline/tests -m "not integration"
