@@ -15,10 +15,10 @@ def update_running_average(supabase_client: Client):
 
     try:
         response = supabase_client.rpc(
-            "update_pm25_running_average"
+            "aqi_to_sentiment"
         ).execute()
 
-        LOG.info("Successfully updated PM2.5 running averages.")
+        LOG.info("Successfully created sentiment labels.")
         return response
 
     except Exception as e:
