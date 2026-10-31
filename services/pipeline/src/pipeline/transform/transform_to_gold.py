@@ -53,7 +53,12 @@ def transform_city_data(city_record: dict) -> dict:
     return flat_enrich_city
 
 def transform_air_data(supabase_client: Client, air_record: dict) -> list:
-
+    """
+    Takes Supabase Client and air record from extraction. Returns a list of 
+    flat dictionaries for loading into gold_air_data on Supabase. The Client is
+    used to find the city_id from gold_cities database. Returns empty list
+    city_id not found.
+    """
     if not isinstance(air_record, dict):
         raise ValueError("Invalid or empty data payload provided.")
 
