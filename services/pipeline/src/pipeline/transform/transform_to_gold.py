@@ -2,82 +2,85 @@ import datetime
 import json
 import logging
 import os
+import pandas as pd
 
 from dotenv import load_dotenv
 from flatten_json import flatten
 from icecream import ic
-from supabase import create_client
-# from data_contracts import GoldSchema
+from supabase import Client
 
 load_dotenv()
 
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-SUPABASE_URL = os.getenv("SUPABASE_URL")
+log = logging.getLogger(__name__)
 
-if SUPABASE_URL is None or SUPABASE_KEY is None:
-    raise RuntimeError("Supabase URL and Key must be set in the environment.")
+def retrieve_city_id(supabase_client: Client, city: str) -> int:
+    response = (
+        supabase_client.table("gold_cities")
+        .select("id", "city")
+        .eq("city", city)
+        .execute()
+    )
 
-supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    if isinstance(response.data[0], dict):
+        id = response.data[0]['id']
+        if isinstance(id, int):
+            return id
+    else: log.warning("Response did not come back with a dictionary")
+    return 0
 
-def convert_unix_to_timestamp(unix: int):
+def convert_unix_to_timestamp(unix: int) -> str:
+    """Takes unix timestamp and returns date/time in iso format"""
     return datetime.datetime.fromtimestamp(unix).isoformat()
 
-def transform_city_data(city_record: dict):
-    sup_cities_data = supabase_client.table('gold_cities').select("city").execute().data
-
-    presently_enriched_cities = {
-        c['city']for c in sup_cities_data if type(c) == dict
-    }
+def transform_city_data(city_record: dict) -> dict:
+    """Takes Supabase client and a record from the raw city table. Converts the payload from the raw data
+    and uploads to Supabase gold_city table"""
 
     city_data = city_record['results'][0]
     if not isinstance(city_data, dict):
             raise ValueError("Invalid or empty data payload provided.")
-
-    if city_data['name'] in presently_enriched_cities:
-        print("This city record has been enriched.")
-        return []
     
     flat_enrich_city = {
-        "city_name": city_data['name'],
+        "city": city_data['name'],
         "state": city_data['admin1'],
+        "country": city_data['country'],
         "lat": city_data['latitude'],
         "lon": city_data['longitude'],
         "population": city_data['population'],
         "elevation": city_data['elevation']
     }
 
-def transform_air_data(air_record: dict):
-    city = air_record['city']
-    lon = air_record['data']['coord']['lon']
-    lat = air_record['data']['coord']['lat']
-    retrieve_date = air_record['retrieve_date']
+    return flat_enrich_city
+
+def transform_air_data(supabase_client: Client, air_record: dict) -> list:
 
     if not isinstance(air_record, dict):
         raise ValueError("Invalid or empty data payload provided.")
 
-    flat_air_record = [{
-            "city": city,
-            "country": "",
-            "date_time": convert_unix_to_timestamp(l['dt']),
-            "co": l['components']['co'],
-            "pm2_5": l['components']['pm2_5'],
-            "no": l['components']['no'],
-            "aqi": l['main']['aqi'],
-            "retrieve_date": retrieve_date,
-            "sentiment_label": "",
-            "running_average": 0.0,
-            "city_id": 1,
-            "lon": lon,
-            "lat": lat
-        } for l in air_record['list']]
+    city = air_record['city']
+    city_id = retrieve_city_id(supabase_client, city)
+    if city_id > 0:
+        target_date = air_record['target_date']
+        lon = air_record['data']['coord']['lon']
+        lat = air_record['data']['coord']['lat']
+        retrieve_date = air_record['retrieve_date']
 
-    sup_air_data = supabase_client.table('gold_air_data').select("date_time", "city_id").execute().data
-    presently_enriched_air = {
-        (a['date_time'], a['city_id']) for a in sup_air_data if type(a) == dict
-    }
 
-    to_enrich_air = [r for r in flat_air_record if (r['date_time'], r['city_id']) not in presently_enriched_air]
-    
-    if not to_enrich_air:
-        print("All records have been enriched.")
-        return []
+        flat_air_record = [{
+                "date_time": convert_unix_to_timestamp(l['dt']),
+                "co": l['components']['co'],
+                "pm2_5": l['components']['pm2_5'],
+                "no2": l['components']['no2'],
+                "aqi": l['main']['aqi'],
+                "retrieve_date": retrieve_date,
+                "sentiment_label": "",
+                "city_id": city_id,
+                "aqi_rolling_7d": 0.0,
+                "pm2_5_rolling_7d": 0.0
+            } for l in air_record['data']['list']]
+        with open('flat_list.json', 'w') as f:
+            json.dump(flat_air_record, f)
+        return flat_air_record
+    else:
+        log.warning("City Name did not return a valid id. Check spelling.")
+    return []
