@@ -40,7 +40,7 @@ def extract(city_name: str, latitude: float, longitude: float, date: str) -> dic
     # Calculate the 24-hour window for the given date
     one_day = 24 * 60 * 60
     start_unix = get_unix("00:00", date)
-    end_unix = start_unix + one_day
+    end_unix = start_unix + one_day - 1
 
     params = {
         "lat": latitude,

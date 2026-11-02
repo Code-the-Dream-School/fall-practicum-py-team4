@@ -21,7 +21,7 @@ class Results(BaseModel):
     admin4_id: Optional[int] = None
     timezone: str
     population: int
-    postcodes: list[str]
+    postcodes: Optional[list[str]] = None
     country_id: int
     country: str
     admin1: str
@@ -57,7 +57,6 @@ class Coordinates(BaseModel):
 class RawOpenWeather(BaseModel):
     coord: Coordinates
     list: list[ListItem]
-    retrieve_date: str
 
 # City
 
@@ -198,7 +197,8 @@ class GoldAirData(BaseModel):
     aqi: int
     retrieve_date: str
     sentiment_label: str
-    running_average: float
+    aqi_rolling_7d: Optional[float] = None
+    pm2_5_rolling_7d: Optional[float] = None
     city_id: int
 
 # Golden Data Example
@@ -225,7 +225,8 @@ gold_air_data = {
     "aqi": 2,
     "retrieve_date": "2026-10-11",
     "sentiment_label": 'fair',
-    "running_average": 2.67,
+    "aqi_rolling_7d": 2.67,
+    "pm2_5_rolling_7d": 10.5,
     "city_id": 3
 }
 

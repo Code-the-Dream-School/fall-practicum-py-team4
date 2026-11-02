@@ -49,7 +49,7 @@ def test_successful_extract(mock_get):
     )
     end = int(
         datetime(2025, 1, 2, tzinfo=timezone.utc).timestamp()
-    )
+    ) - 1
 
     assert isinstance(result, dict)
     assert set(result) == {
