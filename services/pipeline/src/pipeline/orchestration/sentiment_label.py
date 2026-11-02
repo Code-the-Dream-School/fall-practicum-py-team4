@@ -1,26 +1,13 @@
-import logging
-from supabase import Client
+def aqi_to_sentiment(aqi: int) -> str:
+    sentiments = {
+        1: "Good",
+        2: "Fair",
+        3: "Moderate",
+        4: "Poor",
+        5: "Very Poor"
+    }
 
-LOG = logging.getLogger(__name__)
+    if type(aqi) is not int or aqi not in sentiments:
+        raise ValueError("AQI must be an integer between 1 and 5.")
 
-
-def update_running_average(supabase_client: Client):
-    """
-    Updates the 10-day PM2.5 rolling average for each city
-    in the gold_air_data table.
-    """
-
-    if not isinstance(supabase_client, Client):
-        raise ValueError("A valid Supabase client is required.")
-
-    try:
-        response = supabase_client.rpc(
-            "aqi_to_sentiment"
-        ).execute()
-
-        LOG.info("Successfully created sentiment labels.")
-        return response
-
-    except Exception as e:
-        LOG.error("Failed to update running averages: %s", e)
-        raise RuntimeError(f"Failed to update running averages: {e}") from e
+    return sentiments[aqi]
