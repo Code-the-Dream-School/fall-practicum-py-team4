@@ -205,4 +205,22 @@ def test_invalid_city_record():
         transform_city_data(city_record)
 
 def test_parse_air_data():
-    pass
+    flat_air = parse_air_data(SAMPLE_RAW_AIR_PAYLOAD, 1)
+    assert flat_air == SAMPLE_GOLD_AIR
+
+def test_transform_air_data(real_supabase_client, load_gold_city):
+    city_id = retrieve_city_id(real_supabase_client, SAMPLE_GOLD_CITY['city'])
+    gold_air = transform_air_data(real_supabase_client, SAMPLE_RAW_AIR_PAYLOAD)
+    expected_gold_air = [
+        {**record, "city_id": city_id}
+        for record in SAMPLE_GOLD_AIR
+    ]
+    assert gold_air == expected_gold_air
+
+def test_invalid_air_data(real_supabase_client, load_gold_city):
+    with pytest.raises(ValueError):
+        transform_air_data(real_supabase_client, [])
+
+def test_no_city_id_transform(real_supabase_client, load_gold_city):
+    city_id_fail = transform_air_data(real_supabase_client, {"city": "Rome"})
+    assert city_id_fail == []
