@@ -4,7 +4,7 @@ from unittest.mock import Mock
 import pytest
 import requests
 
-from pipeline.extract import openweather_air_pollution as air
+import pipeline.extract.extract as air
 
 FAKE_KEY = "fake-key-123"
 
@@ -55,7 +55,7 @@ def test_successful_extract(mock_get):
     assert set(result) == {
         "city", "target_date", "data", "request_params", "retrieve_date"
     }
-    assert result["city"] == "New York"
+    assert result["city"] == "new york"
     assert result["target_date"] == "2025-01-01"
     assert result["data"] == PAYLOAD
     assert result["request_params"] == {"start": start, "end": end}
@@ -129,4 +129,10 @@ def test_invalid_json(mock_get):
     )
 
     with pytest.raises(requests.exceptions.JSONDecodeError):
+        air.extract("New York", 40.7128, -74.006, "2025-01-01")
+
+def test_invalid_pydantic_schema(mock_get):
+    mock_get.return_value.json.return_value = {"bad_field": "data"}
+
+    with pytest.raises(RuntimeError, match="OpenWeather response failed Pydantic validation"):
         air.extract("New York", 40.7128, -74.006, "2025-01-01")

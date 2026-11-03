@@ -33,7 +33,7 @@ def test_successful_geocoding(mock_get):
 
     assert isinstance(result, dict)
     assert set(result) == {"city", "payload", "retrieve_date"}
-    assert result["city"] == "New York"
+    assert result["city"] == "new york"
     assert result["payload"] == PAYLOAD
     datetime.strptime(result["retrieve_date"], "%Y-%m-%d")
 
@@ -85,4 +85,11 @@ def test_invalid_json(mock_get):
     )
 
     with pytest.raises(requests.exceptions.JSONDecodeError):
+        geo.geocodes("New York")
+
+def test_invalid_pydantic_schema(mock_get):
+    # Missing required fields like 'generationtime_ms' or 'results'
+    mock_get.return_value.json.return_value = {"invalid": "schema"}
+
+    with pytest.raises(RuntimeError, match="Open-Meteo response failed Pydantic validation"):
         geo.geocodes("New York")

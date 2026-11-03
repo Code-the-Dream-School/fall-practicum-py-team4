@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timezone
 from pydantic import BaseModel, field_validator
 from typing import Optional
-# from data_contracts import RawCityRecord
+from contracts.data_contracts import RawOpenMeteo, RawCityRecord
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +13,8 @@ GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 
 def geocodes(city: str) -> dict:
     # takes a single city/zipcode and return the latitude and longitude for it
+
+    city = city.strip().lower()
 
     if not city:
         logger.error("Attempted to call geocodes with an empty city value.")
@@ -28,37 +30,34 @@ def geocodes(city: str) -> dict:
         logger.error("HTTP request failed for city '%s': %s", city, e)
         raise
 
-    data = response.json()
+    # Validate with Pydantic first
+    try:
+        data = RawOpenMeteo(**response.json())
+    except Exception as e:
+        logger.error("API response validation failed for city '%s': %s", city, e)
+        raise RuntimeError(f"Open-Meteo response failed Pydantic validation: {e}") from e
+    logger.info("Successfully validated OpenMeteo response for city: %s", city)
 
-    if "results" not in data or not data['results']:
+    if not data.results:
         logger.warning("No geocoding results found for city: %s", city)
         raise ValueError(f"Could not find '{city}'. Please check the spelling.")
 
-    city_name = data['results'][0]['name']
+    city_name = data.results[0].name.lower()
     retrieve_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     logger.info("Successfully retrieved and matched city: %s", city_name)
 
-    results = {
-        "city": city_name,
-        "payload": data,
-        "retrieve_date": retrieve_date,
-    }
 
-    # # we need to move contracts.py to the root folder, so we can use pydantic to validate the data
-    # # this should be a RawCityRecord
-    # try:
-    #     record = RawCityRecord(
-    #         city = city_name,
-    #         payload = data,
-    #         retrieve_date = datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-    #     )
-    # except Exception as e:
-    #     logger.error("Data validation failed for %s: %s", city_name, e)
-    #     raise RuntimeError(f"City response failed Pydantic validation: {e}") from e
+    try:
+        record = RawCityRecord(
+            city = city_name,
+            payload = data,
+            extracted_at = retrieve_date,
+        )
+    except Exception as e:
+        logger.error("Data validation failed for %s: %s", city_name, e)
+        raise RuntimeError(f"City response failed Pydantic validation: {e}") from e
 
-    # logger.info("Successfully validated city record for %s", city_name)
+    logger.info("Successfully validated city record for %s", city_name)
 
-    # return record.model_dump()
-
-    return results
+    return record.model_dump()

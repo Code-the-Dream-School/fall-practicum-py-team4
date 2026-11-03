@@ -1,8 +1,7 @@
 import os, requests, logging
 from dotenv import load_dotenv
 from datetime import datetime, timezone
-# from data_contracts import RawAirPollutionRecord
-# consider the use of dateutil.parser to parse virtually any date format? 
+from contracts.data_contracts import RawOpenWeather, RawAirPollutionRecord
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +36,8 @@ def extract(city_name: str, latitude: float, longitude: float, date: str) -> dic
     # build the request
     url = AIR_POLLUTION_URL + "/history"
 
+    city_name = city_name.strip().lower()
+
     # Calculate the 24-hour window for the given date
     one_day = 24 * 60 * 60
     start_unix = get_unix("00:00", date)
@@ -68,9 +69,13 @@ def extract(city_name: str, latitude: float, longitude: float, date: str) -> dic
     if response.status_code != 200:
         logger.error("OpenWeather returned error status code: HTTP %s", response.status_code)
         raise RuntimeError(f"OpenWeather returned an error: HTTP {response.status_code}")
-    
-    payload = response.json()
-    logger.info("Successfully retrieved air pollution history for %s", city_name)
+
+    try:
+        payload = RawOpenWeather(**response.json())
+    except Exception as e:
+        logger.error("API response validation failed for city '%s': %s", city_name, e)
+        raise RuntimeError(f"OpenWeather response failed Pydantic validation: {e}") from e
+    logger.info("Successfully validated OpenWeather response for city: %s", city_name)
 
     # package the result like RawAirPollutionRecord in data_contracts.py
     # we need to move contracts.py to the root folder, so we can use pydantic to validate the data
@@ -85,13 +90,11 @@ def extract(city_name: str, latitude: float, longitude: float, date: str) -> dic
         "retrieve_date": datetime.now(timezone.utc).strftime("%Y-%m-%d")   
     }
 
-    # # Validate everything at once
-    # try:
-    #     validated_record = RawAirPollutionRecord(**record_data)
-    # except Exception as e:
-    #     logger.error("Data validation failed for city %s: %s", city_name, e)
-    #     raise RuntimeError(f"OpenWeather response failed Pydantic validation: {e}") from e
+    # Validate everything at once
+    try:
+        validated_record = RawAirPollutionRecord(**record)
+    except Exception as e:
+        logger.error("Data validation failed for city %s: %s", city_name, e)
+        raise RuntimeError(f"OpenWeather response failed Pydantic validation: {e}") from e
 
-    # return validated_record.model_dump()
-
-    return record
+    return validated_record.model_dump()
