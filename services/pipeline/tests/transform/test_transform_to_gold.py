@@ -205,5 +205,4 @@ def test_invalid_city_record():
         transform_city_data(city_record)
 
 def test_parse_air_data():
-
     pass
