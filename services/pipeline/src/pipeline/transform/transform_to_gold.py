@@ -55,6 +55,7 @@ def transform_city_data(city_record: dict) -> dict:
 
 def parse_air_data(air_record: dict, city_id: int) -> list:
     """
+    This function is called through transform_air_data. Not called directly by orchestration
     Uses the air_record dictionary and city_id to parse the variables to
     be loaded to the gold_air_data. Returns a list of dicts.
     """
