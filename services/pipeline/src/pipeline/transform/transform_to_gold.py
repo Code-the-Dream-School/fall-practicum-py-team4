@@ -1,11 +1,7 @@
 import datetime
-import json
 import logging
-import os
-import pandas as pd
 
 from dotenv import load_dotenv
-from flatten_json import flatten
 from icecream import ic
 from supabase import Client
 
