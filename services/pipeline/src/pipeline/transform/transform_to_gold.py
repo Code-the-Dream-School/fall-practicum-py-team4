@@ -2,7 +2,6 @@ import datetime
 import logging
 
 from dotenv import load_dotenv
-from icecream import ic
 from supabase import Client
 
 load_dotenv()
@@ -16,7 +15,6 @@ def retrieve_city_id(supabase_client: Client, city: str) -> int:
         .eq("city", city)
         .execute()
     )
-    ic(response.data)
     if not response.data or not isinstance(response.data[0], dict):
         log.warning("Response did not come back with a dictionary")
     elif isinstance(response.data[0], dict):
