@@ -7,7 +7,7 @@ from pipeline.load.load_raw import load_raw_cities, load_raw_air_pollution
 
 
 # Test Parameters
-TEST_CITY = 'Charlotte'
+TEST_CITY = 'charlotte'
 TEST_DATE = "2000-01-01"
 
 # Sample payload for load_raw_cities
@@ -33,15 +33,16 @@ SAMPLE_CITY_DATA = {
                 "admin1": "North Carolina",
                 "admin2": "Mecklenburg County"
             }
-        ]
+        ],
+        "generationtime_ms": 0.5
     },
-    "retrieve_date": "10/26/2026"
+    "extracted_at": "2026-10-26"
 }
 
 SAMPLE_POLLUTION_DATA = {
     "city": TEST_CITY,
     "target_date": TEST_DATE,
-    "data": {
+    "payload": {
         "coord": {"lon": -80.8431, "lat": 35.2271},
         "list": [
             {
@@ -64,7 +65,7 @@ SAMPLE_POLLUTION_DATA = {
         "start": 1577836800,
         "end": 1577923200,
     },
-    "retrieve_date": "10/26/2026"
+    "extracted_at": "2026-10-26"
 }
 
 @pytest.fixture
