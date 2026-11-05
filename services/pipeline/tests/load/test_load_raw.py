@@ -99,16 +99,14 @@ def cleanup_test_data():
 def test_normal_load(real_supabase_client):
     """Test 1: Test Normal load for raw_cities"""
     response = load_raw_cities(real_supabase_client, SAMPLE_CITY_DATA)
-    assert response is not None
-    inserted_row = response.data[0]
-    assert inserted_row['city'] == TEST_CITY
+    assert response == 1
 
 @pytest.mark.integration
 def test_idempotency_cities(real_supabase_client):
     """Test 2: Test Idempotency for raw_cities"""
     load_raw_cities(real_supabase_client, SAMPLE_CITY_DATA)
     response = load_raw_cities(real_supabase_client, SAMPLE_CITY_DATA)
-    assert response is not None
+    assert response == 1
 
 @pytest.mark.integration
 def test_empty_input_raises_error_cities(real_supabase_client):
@@ -132,7 +130,7 @@ def test_load_raw_cities_mocked():
     # Assert: Verify correct table and upsert arguments were passed
     mock_supabase.table.assert_called_once_with('raw_cities')
     mock_supabase.table.return_value.upsert.assert_called_once()
-    assert response.data[0]['city'] == TEST_CITY
+    assert response == 1
 
 # --- Tests for load_raw_air_pollution ---
 
@@ -140,10 +138,7 @@ def test_load_raw_cities_mocked():
 def test_normal_load_pollution(real_supabase_client):
     """Test 1: Normal load for raw air pollution"""
     response = load_raw_air_pollution(real_supabase_client, SAMPLE_POLLUTION_DATA,)
-    assert response is not None
-    inserted_row = response.data[0]
-    assert inserted_row["city"] == TEST_CITY
-    assert inserted_row["target_date"] == TEST_DATE
+    assert response == 1
 
 
 @pytest.mark.integration
@@ -151,7 +146,7 @@ def test_load_twice_idempotency_pollution(real_supabase_client):
     """Test 2: Idempotency for raw air pollution"""
     load_raw_air_pollution(real_supabase_client, SAMPLE_POLLUTION_DATA)
     response = load_raw_air_pollution(real_supabase_client, SAMPLE_POLLUTION_DATA)
-    assert response is not None
+    assert response == 1
 
 
 @pytest.mark.integration
@@ -174,5 +169,4 @@ def test_load_raw_pollution_mocked():
 
     mock_supabase.table.assert_called_once_with("raw_air_pollution")
     mock_supabase.table.return_value.upsert.assert_called_once()
-    assert response.data[0]['city'] == TEST_CITY
-    assert response.data[0]['target_date'] == TEST_DATE
+    assert response == 1
