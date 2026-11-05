@@ -37,7 +37,7 @@ def load_raw_cities(supabase_client: Client, data: dict):
 
     # parameter extraction
     city = data.get("city")
-    retrieve_date = data.get("retrieve_date")
+    retrieve_date = data.get("extracted_at")
     
     # Inserts a record to the DB
     try: 
@@ -84,7 +84,7 @@ def load_raw_air_pollution(supabase_client: Client, data: dict):
     if (
         not data
         or not isinstance(data, dict)
-        or 'data' not in data
+        or 'payload' not in data
     ):
         LOG.warning("Invalid or empty data payload provided to load_raw")
         raise ValueError("Invalid or empty data payload provided to load_raw.")
@@ -92,8 +92,8 @@ def load_raw_air_pollution(supabase_client: Client, data: dict):
 
     # Extract payload
     city = data.get('city')
-    payload = data.get("data")
-    retrieve_date = data.get("retrieve_date")
+    payload = data.get("payload")
+    retrieve_date = data.get("extracted_at")
     target_date = data.get("target_date")
     request_params = data.get("request_params") or {}
     start = request_params.get("start")
@@ -104,7 +104,7 @@ def load_raw_air_pollution(supabase_client: Client, data: dict):
         record = {
             "city": city,
             "target_date": target_date,
-            "data": payload,
+            "payload": payload,
             "start": start,
             "end": end,
             "extracted_at": retrieve_date

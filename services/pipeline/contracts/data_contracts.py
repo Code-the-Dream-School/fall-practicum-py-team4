@@ -1,6 +1,6 @@
 import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from typing import Optional
 
 # --- Raw Schemas ---
@@ -33,6 +33,17 @@ class RawOpenMeteo(BaseModel):
     results: list[Results]
     generationtime_ms: float
 
+    # when a city is not found Open meteo returns {"generationtime_ms":0.14007092},
+    # so this validator adds the empty results list so it can pass the validation.
+    @model_validator(mode="before")
+    @classmethod
+    def handle_missing_results(cls, values):
+        if isinstance(values, dict):
+            # Only inject empty results if it's a genuine Open-Meteo response containing generationtime_ms
+            if "generationtime_ms" in values and "results" not in values:
+                values["results"] = []
+        return values
+
 # OpenWeather
 
 class Components(BaseModel):
@@ -63,7 +74,7 @@ class RawOpenWeather(BaseModel):
 class RawCityRecord(BaseModel):
     city: str
     payload: RawOpenMeteo
-    retrieve_date: str
+    extracted_at: str
 
 # Air Pollution Record
 
@@ -74,8 +85,8 @@ class Parameters(BaseModel):
 class RawAirPollutionRecord(BaseModel):
     city: str
     target_date: str
-    data: RawOpenWeather
-    retrieve_date: str
+    payload: RawOpenWeather
+    extracted_at: str
     request_params: Optional[Parameters] = None
 
 # Raw Data Example
