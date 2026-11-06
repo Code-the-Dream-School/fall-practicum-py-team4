@@ -6,6 +6,7 @@ import pytest
 from dotenv import load_dotenv
 from pipeline.transform.transform_to_gold import *
 from supabase import create_client, Client
+from icecream import ic
 
 load_dotenv()
 
@@ -212,6 +213,18 @@ def test_invalid_city_record():
     with pytest.raises(ValueError):
         transform_city_data(city_record)
 
+def test_missing_city_variable():
+    city_record = {**copy.deepcopy(SAMPLE_RAW_CITY_PAYLOAD)}
+    city_record['payload']['results'][0]['name'] = ''
+    city_missing = transform_city_data(city_record)
+    expected_city_missing = {**copy.deepcopy(SAMPLE_GOLD_CITY), "city": ''}
+    assert city_missing == expected_city_missing
+
+def test_empty_city_record():
+    city_record = {}
+    with pytest.raises(ValueError):
+        transform_city_data(city_record)
+
 def test_parse_air_data():
     flat_air = parse_air_data(SAMPLE_RAW_AIR_PAYLOAD, 1)
     assert flat_air == SAMPLE_GOLD_AIR
@@ -225,10 +238,19 @@ def test_transform_air_data(real_supabase_client, gold_city):
     ]
     assert gold_air == expected_gold_air
 
-def test_invalid_air_data(real_supabase_client):
-    with pytest.raises(ValueError):
-        transform_air_data(real_supabase_client, {})
-
 def test_no_city_id_transform(real_supabase_client):
     city_id_fail = transform_air_data(real_supabase_client, {"city": "Rome"})
     assert city_id_fail == []
+
+def test_missing_air_variable(real_supabase_client, gold_city):
+    air_record_raw_missing = {**copy.deepcopy(SAMPLE_RAW_AIR_PAYLOAD), "city": TEST_CITY, "retrieve_date": ''}
+    gold_air_missing = transform_air_data(real_supabase_client, air_record_raw_missing)
+    expected_gold_air_missing = [
+        {**record, "city_id": gold_city, "retrieve_date": ''}
+        for record in SAMPLE_GOLD_AIR
+    ]
+    assert gold_air_missing == expected_gold_air_missing
+
+def test_empty_air_data(real_supabase_client):
+    with pytest.raises(ValueError):
+        transform_air_data(real_supabase_client, {})
