@@ -177,47 +177,44 @@ raw_air_data = {
 # --- Golden Schema ---
 
 class GoldCities(BaseModel):
-    city_name: str
     state: str
-    country: str
     lat: float
     lon: float
     population: int
     elevation: float
-
-class GoldAirData(BaseModel):
-    longitude: float
-    latitude: float
-    city: str
+    city_name: str
     country: str
-    date_time: str
+
+class GoldAirDict(BaseModel):
+    date_time: datetime.datetime
     co: float
     no2: float
     pm2_5: float
     aqi: int
     retrieve_date: str
     sentiment_label: str
+    city_id: int
     aqi_rolling_7d: Optional[float] = None
     pm2_5_rolling_7d: Optional[float] = None
-    city_id: int
+    llm_response: str
+
+class GoldAirData(BaseModel):
+    list[GoldAirDict]
 
 # Golden Data Example
 
 gold_cities = {
-    "city_name": "Paris",
     "state": "Île-de-France Region",
     "country": "France",
     "lat": 48.85341,
     "lon": 2.3488,
     "population": 2138551,
-    "elevation": 42.0
+    "elevation": 42.0,
+    "city_name": "Paris",
+    "country": "France"
 }
 
-gold_air_data = {
-    "longitude": -73.98,
-    "latitude": 40.74,
-    "city": "New York",
-    "country": "United States",
+gold_air_data = [{
     "date_time": "2025-05-01T21:00:00",
     "co": 130.95, 
     "no2": 0.96, 
@@ -225,10 +222,13 @@ gold_air_data = {
     "aqi": 2,
     "retrieve_date": "2026-10-11",
     "sentiment_label": 'fair',
+    "city_id": 3,
     "aqi_rolling_7d": 2.67,
     "pm2_5_rolling_7d": 10.5,
-    "city_id": 3
-}
+    "llm_response": "Air quality is currently moderate, with an AQI of 3. PM2.5 is measured at 18.5 μg/m³, "
+                    "slightly above its seven-day average of 16.2 μg/m³. The seven-day AQI average of 2.7 "
+                    "provides additional context for recent conditions."
+}]
 
 # --- Function Signatures ---
 
@@ -267,7 +267,7 @@ def transform(raw_records: list) -> list:
 # --- Input Configuration ---
 
 city: str                               # accepts city names and zipcodes
-date_range: Optional[str] = ""          # format YYYY-MM-DD for past 60 days, delimiter " - "
+date_range: Optional[str] = ""          # format YYYY-MM-DD for past 60 days, delimiter " - ", default is today
 
 # Input Example
 
