@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 from supabase import Client
 from typing import Optional
+from icecream import ic
 
 log = logging.getLogger(__name__)
 
@@ -22,9 +23,13 @@ def retrieve_city_id(supabase_client: Client, city: str) -> Optional[int]:
         return city_id
     return None
 
-def convert_unix_to_timestamp(unix: int) -> str:
-    """Converts a unix timestamp to a UTC 'YYYY-MM-DD HH:MM' string."""
-    return datetime.fromtimestamp(unix, timezone.utc).strftime("%Y-%m-%d %H:%M")
+def convert_unix_to_datetime(unix: int) -> datetime:
+    """
+    Converts a unix timestamp to a UTC datetime object.
+    Strip minutes, seconds, and microseconds to create the clean hourly bucket
+    """
+    date_time = datetime.fromtimestamp(unix, timezone.utc)
+    return date_time.replace(minute=0, second=0, microsecond=0)
 
 def transform_city_data(city_record: dict) -> dict:
     """Takes a raw city record. Enriches the record and returns a dictionary"""
@@ -71,7 +76,7 @@ def parse_air_data(air_record: dict, city_id: int) -> list[dict]:
             continue
         components = reading.get("components", {})
         flat_air_records.append({
-            "date_time": convert_unix_to_timestamp(reading["dt"]),
+            "date_time": convert_unix_to_datetime(reading["dt"]),
             "co": components.get("co"),
             "pm2_5": components.get("pm2_5"),
             "no2": components.get("no2"),
@@ -82,6 +87,7 @@ def parse_air_data(air_record: dict, city_id: int) -> list[dict]:
             "aqi_rolling_7d": 0.0,
             "pm2_5_rolling_7d": 0.0,
         })
+    ic(flat_air_records)
     return flat_air_records
 
 def transform_air_data(supabase_client: Client, air_record: dict) -> list[dict]:

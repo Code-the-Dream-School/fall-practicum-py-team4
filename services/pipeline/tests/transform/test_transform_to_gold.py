@@ -3,8 +3,15 @@ import logging
 import os
 import pytest
 
+from datetime import datetime, timezone
 from dotenv import load_dotenv
-from pipeline.transform.transform_to_gold import *
+from pipeline.transform.transform_to_gold import (
+    convert_unix_to_datetime,
+    parse_air_data,
+    retrieve_city_id,
+    transform_air_data,
+    transform_city_data,
+)
 from supabase import create_client, Client
 from icecream import ic
 
@@ -119,7 +126,7 @@ SAMPLE_GOLD_CITY = {
 
 SAMPLE_GOLD_AIR = [
     {
-        "date_time": "2025-05-01 00:00",
+        "date_time": datetime(2025, 5, 1, 0, 0, tzinfo=timezone.utc),
         "co": 207.09,
         "pm2_5": 8.56,
         "no2": 11.75,
@@ -131,7 +138,7 @@ SAMPLE_GOLD_AIR = [
         "pm2_5_rolling_7d": 0.0
     },
     {
-        "date_time": "2025-05-01 01:00",
+        "date_time": datetime(2025, 5, 1, 1, 0, tzinfo=timezone.utc),
         "co": 212.69,
         "pm2_5": 9.37,
         "no2": 12.28,
@@ -143,7 +150,7 @@ SAMPLE_GOLD_AIR = [
         "pm2_5_rolling_7d": 0.0
     },
     {
-        "date_time": "2025-05-01 02:00",
+        "date_time": datetime(2025, 5, 1, 2, 0, tzinfo=timezone.utc),
         "co": 217.08,
         "pm2_5": 10.01,
         "no2": 12.32,
@@ -201,8 +208,8 @@ def test_city_id_zero(real_supabase_client):
     city_id = retrieve_city_id(real_supabase_client, 'Rome')
     assert city_id == None
 
-def test_convert_unix_to_timestamp():
-    assert convert_unix_to_timestamp(timestamp) == "2026-11-05 01:25"
+def test_convert_unix_to_datetime():
+    assert convert_unix_to_datetime(timestamp) == datetime(2026, 11, 5, 1, 0, tzinfo=timezone.utc)
 
 def test_transform_city_data():
     flat_city = transform_city_data(SAMPLE_RAW_CITY_PAYLOAD)
