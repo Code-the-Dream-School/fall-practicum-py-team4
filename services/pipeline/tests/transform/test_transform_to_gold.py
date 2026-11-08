@@ -13,7 +13,6 @@ from pipeline.transform.transform_to_gold import (
     transform_city_data,
 )
 from supabase import create_client, Client
-from icecream import ic
 
 load_dotenv()
 
