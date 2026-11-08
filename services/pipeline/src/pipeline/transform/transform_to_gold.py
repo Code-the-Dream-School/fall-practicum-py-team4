@@ -9,6 +9,11 @@ from icecream import ic
 log = logging.getLogger(__name__)
 
 def retrieve_city_id(supabase_client: Client, city: str) -> Optional[int]:
+    '''
+    Gets city_id from gold_cities Supabase table.
+    Returns None if unable to acquire id
+    '''
+
     response = (
         supabase_client.table("gold_cities")
         .select("id", "city")
@@ -28,6 +33,7 @@ def convert_unix_to_datetime(unix: int) -> datetime:
     Converts a unix timestamp to a UTC datetime object.
     Strip minutes, seconds, and microseconds to create the clean hourly bucket
     """
+
     date_time = datetime.fromtimestamp(unix, timezone.utc)
     return date_time.replace(minute=0, second=0, microsecond=0)
 
@@ -65,7 +71,11 @@ def transform_city_data(city_record: dict) -> dict:
     return flat_enrich_city
 
 def parse_air_data(air_record: dict, city_id: int) -> list[dict]:
-    """Flattens each hourly reading in the air record into a row for gold_air_data."""
+    """
+    Flattens each hourly reading in the air record into a row for gold_air_data.
+    Bypasses records with a missing value.
+    """
+
     retrieve_date = air_record.get("retrieve_date")
     readings = air_record.get("data", {}).get("list", [])
 
@@ -75,18 +85,21 @@ def parse_air_data(air_record: dict, city_id: int) -> list[dict]:
             log.warning("Skipping reading with no timestamp: %s", reading)
             continue
         components = reading.get("components", {})
-        flat_air_records.append({
+        record = {
             "date_time": convert_unix_to_datetime(reading["dt"]),
             "co": components.get("co"),
             "pm2_5": components.get("pm2_5"),
             "no2": components.get("no2"),
             "aqi": reading.get("main", {}).get("aqi"),
             "retrieve_date": retrieve_date,
-            "sentiment_label": "",
+            "sentiment_label": "",          # calls function
             "city_id": city_id,
-            "aqi_rolling_7d": 0.0,
-            "pm2_5_rolling_7d": 0.0,
-        })
+            "aqi_rolling_7d": 0.0,          # calls function
+            "pm2_5_rolling_7d": 0.0,        # calls function
+            "llm_summary": ""
+        }
+        if None not in record:
+            flat_air_records.append(record)
     ic(flat_air_records)
     return flat_air_records
 
@@ -94,9 +107,10 @@ def transform_air_data(supabase_client: Client, air_record: dict) -> list[dict]:
     """
     Takes Supabase Client and air record from extraction. Returns a list of 
     flat dictionaries by calling the parse function. The Client is
-    used to find the city_id from gold_cities database. Returns empty list if
-    city_id not found.
+    used to find the city_id from gold_cities database. 
+    Returns empty list if city_id not found.
     """
+
     if not air_record or not isinstance(air_record, dict):
         raise ValueError("Invalid or empty data payload provided.")
 
