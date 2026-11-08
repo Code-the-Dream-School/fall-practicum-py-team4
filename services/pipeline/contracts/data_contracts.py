@@ -193,7 +193,7 @@ class GoldCities(BaseModel):
     lon: float
     population: int
     elevation: float
-    city_name: str
+    city: str
     country: str
 
 class GoldAirDict(BaseModel):
