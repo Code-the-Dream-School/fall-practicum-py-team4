@@ -9,10 +9,19 @@ from pipeline.extract import geocoding as geo
 PAYLOAD = {
     "results": [
         {
+            "id": 5128581,
             "name": "New York",
             "latitude": 40.7128,
             "longitude": -74.006,
+            "elevation": 10.0,
+            "feature_code": "PPL",
             "country_code": "US",
+            "admin1_id": 5128638,
+            "timezone": "America/New_York",
+            "population": 8804190,
+            "country_id": 6252001,
+            "country": "United States",
+            "admin1": "New York"
         }
     ],
     "generationtime_ms": 0.5,
@@ -29,17 +38,20 @@ def mock_get(monkeypatch):
 
 
 def test_successful_geocoding(mock_get):
+    mock_get.return_value.json.return_value = PAYLOAD
+
     result = geo.geocodes("New York")
 
     assert isinstance(result, dict)
-    assert set(result) == {"city", "payload", "retrieve_date"}
-    assert result["city"] == "New York"
-    assert result["payload"] == PAYLOAD
-    datetime.strptime(result["retrieve_date"], "%Y-%m-%d")
+    assert set(result) == {"city", "payload", "extracted_at"}
+    assert result["city"] == "new york"
+    assert result["payload"]["results"][0]["name"] == "New York"
+    assert result["payload"]["results"][0]["latitude"] == 40.7128
+    datetime.strptime(result["extracted_at"], "%Y-%m-%d")
 
     mock_get.assert_called_once_with(
         geo.GEOCODING_URL,
-        params={"name": "New York", "count": 1},
+        params={"name": "new york", "count": 1},
         timeout=15,
     )
     mock_get.return_value.raise_for_status.assert_called_once_with()
@@ -53,7 +65,7 @@ def test_missing_city(mock_get, city):
     mock_get.assert_not_called()
 
 
-@pytest.mark.parametrize("payload", [{}, {"results": []}])
+@pytest.mark.parametrize("payload", [{"generationtime_ms": 0.0}])
 def test_location_not_found(mock_get, payload):
     mock_get.return_value.json.return_value = payload
 
@@ -85,4 +97,11 @@ def test_invalid_json(mock_get):
     )
 
     with pytest.raises(requests.exceptions.JSONDecodeError):
+        geo.geocodes("New York")
+
+def test_invalid_pydantic_schema(mock_get):
+    # Missing required fields like 'generationtime_ms' or 'results'
+    mock_get.return_value.json.return_value = {"invalid": "schema"}
+
+    with pytest.raises(RuntimeError, match="Open-Meteo response failed Pydantic validation"):
         geo.geocodes("New York")
