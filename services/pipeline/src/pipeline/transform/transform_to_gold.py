@@ -2,6 +2,7 @@ import logging
 
 from datetime import datetime, timezone
 from dotenv import load_dotenv
+from contracts.data_contracts import GoldCities, GoldAirData
 from supabase import Client
 from typing import Optional
 
@@ -67,7 +68,14 @@ def transform_city_data(city_record: dict) -> dict:
             value = value.lower()
         flat_enrich_city[gold_name] = value
 
-    return flat_enrich_city
+    # Validate against data contracts
+    try:
+        validated_record = GoldCities(**flat_enrich_city)
+    except Exception as e:
+        log.error("Data validation failed for city %s: %s", flat_enrich_city['city'], e)
+        raise RuntimeError(f"OpenWeather response failed Pydantic validation: {e}") from e
+
+    return validated_record.model_dump()
 
 def parse_air_data(air_record: dict, city_id: int) -> list[dict]:
     """
@@ -97,7 +105,12 @@ def parse_air_data(air_record: dict, city_id: int) -> list[dict]:
             "pm2_5_rolling_7d": 0.0,        # calls function
             "llm_response": ""
         })
-    return flat_air_records
+    try:
+        validated_air_records = GoldAirData.model_validate({'gold_air_data': flat_air_records})
+    except Exception as e:
+        log.error("Data validation failed for city %s: %s", (city_id, e))
+        raise RuntimeError(f"OpenWeather response failed Pydantic validation: {e}") from e
+    return validated_air_records.model_dump()['gold_air_data']
 
 def transform_air_data(supabase_client: Client, air_record: dict) -> list[dict]:
     """

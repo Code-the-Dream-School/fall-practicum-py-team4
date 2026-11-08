@@ -12,7 +12,7 @@ from pipeline.transform.transform_to_gold import (
     transform_air_data,
     transform_city_data,
 )
-from supabase import create_client, Client
+from supabase import create_client
 
 load_dotenv()
 

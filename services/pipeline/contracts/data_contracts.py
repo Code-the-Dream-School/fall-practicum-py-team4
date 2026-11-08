@@ -193,7 +193,7 @@ class GoldCities(BaseModel):
     lon: float
     population: int
     elevation: float
-    city_name: str
+    city: str
     country: str
 
 class GoldAirDict(BaseModel):
@@ -210,7 +210,7 @@ class GoldAirDict(BaseModel):
     llm_response: str
 
 class GoldAirData(BaseModel):
-    list[GoldAirDict]
+    gold_air_data: list[GoldAirDict]
 
 # Golden Data Example
 
