@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from contracts.data_contracts import GoldCities, GoldAirData
+from sentiment_label import aqi_to_sentiment
 from supabase import Client
 from typing import Optional
 
@@ -92,19 +93,21 @@ def parse_air_data(air_record: dict, city_id: int) -> list[dict]:
             log.warning("Skipping reading with no timestamp: %s", reading)
             continue
         components = reading.get("components", {})
+        aqi = reading.get("main", {}).get("aqi")
         flat_air_records.append({
             "date_time": convert_unix_to_datetime(reading["dt"]),
             "co": components.get("co"),
             "pm2_5": components.get("pm2_5"),
             "no2": components.get("no2"),
-            "aqi": reading.get("main", {}).get("aqi"),
+            "aqi": aqi,
             "retrieve_date": retrieve_date,
-            "sentiment_label": "",          # calls function
+            "sentiment_label": aqi_to_sentiment(aqi),
             "city_id": city_id,
             "aqi_rolling_7d": 0.0,          # calls function
             "pm2_5_rolling_7d": 0.0,        # calls function
             "llm_response": ""
         })
+        
     try:
         validated_air_records = GoldAirData.model_validate({'gold_air_data': flat_air_records})
     except Exception as e:
