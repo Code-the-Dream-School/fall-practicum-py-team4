@@ -9,6 +9,7 @@ from pipeline.orchestration.tasks import (
     load_raw_air_pollution_task,
     transform_city,
     transform_air,
+    transform_rolling_averages
 )
 
 
@@ -72,7 +73,9 @@ def main_etl_flow(cities: list[str] = None):
 
                 if pollution_data:
                     load_raw_air_pollution_task(pollution_data)
-                    transform_air(city_id=city_id, data=pollution_data)
+                    formatted_gold = transform_air(city_id=city_id, data=pollution_data)
+                    
+                    rolling_7d_added = transform_rolling_averages(city_id, formatted_gold, ['aqi', 'pm2_5'], city_name)
 
             logger.info(f"Successfully processed all missing dates for {city_name}")
             

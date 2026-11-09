@@ -1,4 +1,5 @@
 from prefect import task
+from typing import Any, Mapping
 import time
 
 from pipeline.utils.planner import AirPollutionPlanner
@@ -8,6 +9,7 @@ from pipeline.extract.geocoding_cache import get_city_from_cache
 from pipeline.extract.extract import extract
 from pipeline.load.load_raw import load_raw_cities, load_raw_air_pollution
 from pipeline.transform.transform_to_gold import transform_city_data, transform_air_data
+from pipeline.transform.rolling_average import get_timestamp, fetch_historical_readings, add_rolling_average 
 
 # Execution Plan
 @task(retries=2,
@@ -105,7 +107,7 @@ def load_raw_air_pollution_task(data) -> dict:
 def transform_city(data) -> dict:
     """Loads Raw Air Pollution Data into Supabase raw_air_pollution"""
     client = get_supabase_client()
-    load_raw_air_pollution(supabase_client=client, data=data)
+    transform_city_data(supabase_client=client, data=data)
     time.sleep(2)
     return 1
 
@@ -120,6 +122,39 @@ def transform_city(data) -> dict:
 def transform_air(data) -> dict:
     """Loads Raw Air Pollution Data into Supabase raw_air_pollution"""
     client = get_supabase_client()
-    load_raw_air_pollution(supabase_client=client, data=data)
+    transform_air_data(supabase_client=client, data=data)
     time.sleep(2)
     return 1
+
+# Add Rolling Averages
+@task(
+    retries=3,
+    retry_delay_seconds=10,
+    name="Transform Rolling Averages",
+    on_completion=[log_task_success],
+    on_failure=[log_task_failure]
+)
+def transform_rolling_averages(city_id: int, current_batch: list[dict[str, Any]], fields: list[str], city_name: str) -> list[dict[str, Any]]:
+    """
+    Fetches historical readings once and calculates 7-day rolling averages 
+    for multiple fields (e.g., AQI, PM2.5) in a single pass.
+    """
+    # Fetch previous 6 days & merge with current 24h batch
+    client = get_supabase_client()
+
+    full_dataset = fetch_historical_readings(
+        supabase_client=client,
+        city_id=city_id,
+        current_readings=current_batch,
+        city_name=city_name,
+        table_name="gold_air_data"
+    )
+
+    enriched_readings = full_dataset
+    for field in fields:
+        enriched_readings = add_rolling_average(enriched_readings, field=field)
+    
+    batch_start = min(get_timestamp(r, i) for i, r in enumerate(current_batch))
+    rolling7d_output = [r for r in enriched_readings if r["date_time"] >= batch_start]
+    
+    return rolling7d_output
