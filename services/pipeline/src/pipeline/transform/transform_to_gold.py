@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from contracts.data_contracts import GoldCities, GoldAirData
-from sentiment_label import aqi_to_sentiment
+from transform.sentiment_label import aqi_to_sentiment
 from supabase import Client
 from typing import Optional
 
