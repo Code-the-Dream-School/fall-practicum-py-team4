@@ -10,6 +10,7 @@ TEST_CITY = 'Charlotte'
 
 # Sample mock response data for gold_cities cache hit
 SAMPLE_CACHE_RECORD = {
+    "id": 33,
     "city": 'charlotte',
     "lat": 35.2271,
     "lon": -80.8431
@@ -43,6 +44,7 @@ def test_get_city_from_cache_hit():
     mock_supabase.table.return_value.select.return_value.eq.assert_called_once_with("city", TEST_CITY.strip().lower())
     
     assert result is not None
+    assert result['city_id'] == SAMPLE_CACHE_RECORD['id']
     assert result['city'] == SAMPLE_CACHE_RECORD['city']
     assert result['latitude'] == 35.2271
     assert result['longitude'] == -80.8431
@@ -85,6 +87,7 @@ def test_cache_hit_integration(real_supabase_client):
     result = get_city_from_cache(TEST_CITY, real_supabase_client)
     
     if result is not None:
+        assert 'city_id' in result
         assert result['city'] == TEST_CITY.strip().lower()
         assert 'latitude' in result
         assert 'longitude' in result
