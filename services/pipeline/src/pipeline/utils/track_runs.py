@@ -28,9 +28,9 @@ def get_supabase_client() -> Client:
     return _supabase_client
 
 
-def log_flow_success(flow, flow_run, state: State):
+def log_task_success(task, task_run, state: State):
     """
-    Prefect completion hook that logs a successful flow run to Supabase.
+    Prefect completion hook that logs a successful task run to Supabase.
     Extracts the processed record count from the state result and upserts 
     metadata (duration, status, timestamp) into the pipeline_runs table.
     """
@@ -43,11 +43,11 @@ def log_flow_success(flow, flow_run, state: State):
 
     try:
         client.table("pipeline_runs").upsert({
-            "id": str(flow_run.id),
-            "process": flow_run.name,
+            "id": str(task_run.id),
+            "process": task_run.name,
             "status": "SUCCESS",
-            "runs_time": flow_run.total_run_time,
-            "created_at": flow_run.start_time.isoformat(),
+            "runs_time": task_run.total_run_time,
+            "created_at": task_run.start_time.isoformat(),
             "records_added": records_count,
             "message": ""
         }, on_conflict="id").execute()
@@ -55,7 +55,7 @@ def log_flow_success(flow, flow_run, state: State):
         LOG.error("Failed to log flow success to Supabase: %s", e)
 
 
-def log_flow_failure(flow, flow_run, state: State):
+def log_task_failure(task, task_run, state: State):
     """
     Prefect failure hook that logs a failed flow run to Supabase.
     Records a FAILED status, run duration, and sets records_added to 0 
@@ -71,15 +71,15 @@ def log_flow_failure(flow, flow_run, state: State):
     # Fallback to checking the exception object if message is empty
     if not error_msg:
         res = state.result(raise_on_failure=False)
-        error_msg = str(res) if res else "Unknown flow failure"
+        error_msg = str(res) if res else "Unknown task failure"
     
     try:
         client.table("pipeline_runs").upsert({
-            "id": str(flow_run.id),
-            "process": flow_run.name,
+            "id": str(task_run.id),
+            "process": task_run.name,
             "status": "FAILED",
-            "runs_time": flow_run.total_run_time,
-            "created_at": flow_run.start_time.isoformat(),
+            "runs_time": task_run.total_run_time,
+            "created_at": task_run.start_time.isoformat(),
             "records_added": 0,
             "message": error_msg
         }, on_conflict="id").execute()
