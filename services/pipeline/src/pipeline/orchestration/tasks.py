@@ -62,7 +62,7 @@ def fetch_geocoding(city: str) -> dict:
 )
 def fetch_air_pollution(city: str, lat: float, lon: float, date: str) -> dict:
     """Extracts Air Pollution Data from OpenWeather"""
-    data = extract(city_name=city, latitude=lat, longitude=lon, date=date)
+    data = extract(city, lat, lon, date)
     time.sleep(2)
     return data
 
@@ -77,7 +77,7 @@ def fetch_air_pollution(city: str, lat: float, lon: float, date: str) -> dict:
 def load_raw_cities_task(data) -> dict:
     """Loads Raw City data into Supabase raw_cities"""
     client = get_supabase_client()
-    load_raw_cities(supabase_client=client, data=data)
+    load_raw_cities(client, data)
     time.sleep(2)
     return 1
 
@@ -92,7 +92,7 @@ def load_raw_cities_task(data) -> dict:
 def load_raw_air_pollution_task(data) -> dict:
     """Loads Raw Air Pollution Data into Supabase raw_air_pollution"""
     client = get_supabase_client()
-    load_raw_air_pollution(supabase_client=client, data=data)
+    load_raw_air_pollution(client, data)
     time.sleep(2)
     return 1
 
@@ -105,9 +105,8 @@ def load_raw_air_pollution_task(data) -> dict:
     on_failure=[log_task_failure]
 )
 def transform_city(data) -> dict:
-    """Loads Raw Air Pollution Data into Supabase raw_air_pollution"""
-    client = get_supabase_client()
-    transform_city_data(supabase_client=client, data=data)
+    """Transforms raw city data, returns the gold_cities entry."""
+    transform_city_data(data)
     time.sleep(2)
     return 1
 
@@ -119,12 +118,11 @@ def transform_city(data) -> dict:
     on_completion=[log_task_success],
     on_failure=[log_task_failure]
 )
-def transform_air(data) -> dict:
-    """Loads Raw Air Pollution Data into Supabase raw_air_pollution"""
-    client = get_supabase_client()
-    transform_air_data(supabase_client=client, data=data)
+def transform_air(data, city_id) -> tuple:
+    """Transforms raw air pollution data, returns the records with metadata."""
+    transformed_data = transform_air_data(data, city_id)
     time.sleep(2)
-    return 1
+    return (len(transformed_data), transformed_data)
 
 # Add Rolling Averages
 @task(
@@ -134,7 +132,7 @@ def transform_air(data) -> dict:
     on_completion=[log_task_success],
     on_failure=[log_task_failure]
 )
-def transform_rolling_averages(city_id: int, current_batch: list[dict[str, Any]], fields: list[str], city_name: str) -> list[dict[str, Any]]:
+def transform_rolling_averages(city_id: int, current_batch: list[dict[str, Any]], fields: list[str], city_name: str) -> tuple[int, list[dict[str, Any]]]:
     """
     Fetches historical readings once and calculates 7-day rolling averages 
     for multiple fields (e.g., AQI, PM2.5) in a single pass.
@@ -159,4 +157,4 @@ def transform_rolling_averages(city_id: int, current_batch: list[dict[str, Any]]
     batch_start = min(get_timestamp(r, i) for i, r in enumerate(current_batch))
     rolling7d_output = [r for r in enriched_readings if r["date_time"] >= batch_start]
     
-    return rolling7d_output
+    return (len(rolling7d_output), rolling7d_output)

@@ -72,17 +72,27 @@ def main_etl_flow(cities: list[str] = None):
                 pollution_data = fetch_air_pollution(city=city_name, lat=lat, lon=lon, date=target_date)
 
                 if pollution_data:
+                    logger.info(f"Succesfully fetched air pollution for {city_name} on date: {target_date}...")
+
                     load_raw_air_pollution_task(pollution_data)
-                    formatted_gold = transform_air(city_id=city_id, data=pollution_data)
-                    rolling_7d_added = transform_rolling_averages(city_id, formatted_gold, ['aqi', 'pm2_5'], city_name)
-                    #llm_enriched = llm_enrichment_added(rolling_7d_added)
-                    #load_gold(llm_enriched)
+                    logger.info(f"Saved raw data for {city_name} on date: {target_date}...")
+
+                    air_count, formatted_gold = transform_air(pollution_data, city_id)
+                    logger.info(f"Formatted {air_count} air records for {city_name} on date: {target_date}...")
+
+                    rolling_count, rolling_7d_added = transform_rolling_averages(city_id, formatted_gold, ['aqi', 'pm2_5'], city_name)
+                    logger.info(f"Added 7d rolling average for {rolling_count} records for {city_name} on date: {target_date}...")
+
+                    #load_gold(rolling_7d_added)
+
                     
             logger.info(f"Successfully processed all missing dates for {city_name}")
             
         except Exception as e:
             logger.error(f"Failed to process pipeline for {city_name}: {e}")
             continue
+
+    #llm_enrichment_added()
         
     logger.info("Pipeline execution completed successfully!")
 
