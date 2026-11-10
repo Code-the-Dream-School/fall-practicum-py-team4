@@ -210,7 +210,7 @@ class GoldAirDict(BaseModel):
     llm_response: str
 
 class GoldAirData(BaseModel):
-    list[GoldAirDict]
+    gold_air_data: list[GoldAirDict]
 
 # Golden Data Example
 
