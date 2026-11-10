@@ -74,9 +74,10 @@ def main_etl_flow(cities: list[str] = None):
                 if pollution_data:
                     load_raw_air_pollution_task(pollution_data)
                     formatted_gold = transform_air(city_id=city_id, data=pollution_data)
-                    
                     rolling_7d_added = transform_rolling_averages(city_id, formatted_gold, ['aqi', 'pm2_5'], city_name)
-
+                    #llm_enriched = llm_enrichment_added(rolling_7d_added)
+                    #load_gold(llm_enriched)
+                    
             logger.info(f"Successfully processed all missing dates for {city_name}")
             
         except Exception as e:

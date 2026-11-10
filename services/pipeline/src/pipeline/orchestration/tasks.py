@@ -139,9 +139,10 @@ def transform_rolling_averages(city_id: int, current_batch: list[dict[str, Any]]
     Fetches historical readings once and calculates 7-day rolling averages 
     for multiple fields (e.g., AQI, PM2.5) in a single pass.
     """
-    # Fetch previous 6 days & merge with current 24h batch
+
     client = get_supabase_client()
 
+    # Fetch previous 6 days & merge with current 24h batch
     full_dataset = fetch_historical_readings(
         supabase_client=client,
         city_id=city_id,
@@ -153,7 +154,8 @@ def transform_rolling_averages(city_id: int, current_batch: list[dict[str, Any]]
     enriched_readings = full_dataset
     for field in fields:
         enriched_readings = add_rolling_average(enriched_readings, field=field)
-    
+
+    # Discard historical
     batch_start = min(get_timestamp(r, i) for i, r in enumerate(current_batch))
     rolling7d_output = [r for r in enriched_readings if r["date_time"] >= batch_start]
     
