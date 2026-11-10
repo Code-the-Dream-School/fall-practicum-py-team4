@@ -9,6 +9,7 @@ load_dotenv()
 # Logging client for tracking successful data loads and debugging failures.
 LOG = logging.getLogger(__name__)
 
+
 def serialize_record(record: dict) -> dict:
     """
     Returns a copy of the record with datetime values converted to ISO 8601 strings,
@@ -18,6 +19,7 @@ def serialize_record(record: dict) -> dict:
         key: value.isoformat() if isinstance(value, datetime) else value
         for key, value in record.items()
     }
+
 
 def load_gold_cities(supabase_client: Client, data: dict):
     """
@@ -59,10 +61,12 @@ def load_gold_cities(supabase_client: Client, data: dict):
         ):
             LOG.info("Successfully loaded gold data info for %s", response.data[0].get('city'))
         return 1
+    
     # raises an error if the record failed to insert/upsert to the DB
     except Exception as e:
         LOG.error("Failed to insert gold data into Supabase for %s: %s", data['city'], e)
         raise RuntimeError(f"Failed to insert gold data into Supabase: {e}") from e
+
 
 def load_gold_air_data(supabase_client: Client, data: list):
     """
@@ -94,7 +98,7 @@ def load_gold_air_data(supabase_client: Client, data: list):
     try: 
         # Upsert, so it ensures running twice creates no duplicates (requires unique index on city_id and date_time)
         response = supabase_client.table("gold_air_data").upsert(
-            data,
+            [serialize_record(i) for i in data],
             on_conflict="city_id, date_time"
         ).execute()
 
