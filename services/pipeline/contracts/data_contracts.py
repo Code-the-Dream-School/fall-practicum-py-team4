@@ -1,7 +1,8 @@
 import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from typing import Optional
+from supabase import Client
 
 # --- Raw Schemas ---
 
@@ -21,7 +22,7 @@ class Results(BaseModel):
     admin4_id: Optional[int] = None
     timezone: str
     population: int
-    postcodes: list[str]
+    postcodes: Optional[list[str]] = None
     country_id: int
     country: str
     admin1: str
@@ -32,6 +33,17 @@ class Results(BaseModel):
 class RawOpenMeteo(BaseModel):
     results: list[Results]
     generationtime_ms: float
+
+    # when a city is not found Open meteo returns {"generationtime_ms":0.14007092},
+    # so this validator adds the empty results list so it can pass the validation.
+    @model_validator(mode="before")
+    @classmethod
+    def handle_missing_results(cls, values):
+        if isinstance(values, dict):
+            # Only inject empty results if it's a genuine Open-Meteo response containing generationtime_ms
+            if "generationtime_ms" in values and "results" not in values:
+                values["results"] = []
+        return values
 
 # OpenWeather
 
@@ -57,14 +69,13 @@ class Coordinates(BaseModel):
 class RawOpenWeather(BaseModel):
     coord: Coordinates
     list: list[ListItem]
-    retrieve_date: str
 
 # City
 
 class RawCityRecord(BaseModel):
     city: str
     payload: RawOpenMeteo
-    retrieve_date: str
+    extracted_at: str
 
 # Air Pollution Record
 
@@ -75,8 +86,8 @@ class Parameters(BaseModel):
 class RawAirPollutionRecord(BaseModel):
     city: str
     target_date: str
-    data: RawOpenWeather
-    retrieve_date: str
+    payload: RawOpenWeather
+    extracted_at: str
     request_params: Optional[Parameters] = None
 
 # Raw Data Example
@@ -133,7 +144,6 @@ raw_meteo = {
 
 # OpenWeather
 raw_data = {
-    "retrieve_date": "2026-10-11",
     "coord": {
         "lon": 50.0,
         "lat": 50.0
@@ -169,55 +179,55 @@ raw_city = {
 raw_air_data = {
     "city": "New York",
     "target_date": "2025-05-01",
-    "data": {},
-    "retrieve_date": "2026-10-11",
-    "start": 1746057600,
-    "end": 1746061200          
+    "payload": {},
+    "extracted_at": "2026-10-11",
+    "request_params": {
+        "start": 1746057600,
+        "end": 1746143999
+        },        
 }
 
 # --- Golden Schema ---
 
 class GoldCities(BaseModel):
-    city_name: str
     state: str
-    country: str
     lat: float
     lon: float
     population: int
     elevation: float
-
-class GoldAirData(BaseModel):
-    longitude: float
-    latitude: float
     city: str
     country: str
-    date_time: str
+
+class GoldAirDict(BaseModel):
+    date_time: datetime.datetime
     co: float
     no2: float
     pm2_5: float
     aqi: int
     retrieve_date: str
     sentiment_label: str
-    running_average: float
     city_id: int
+    aqi_rolling_7d: Optional[float] = None
+    pm2_5_rolling_7d: Optional[float] = None
+    llm_response: Optional[str] = None
+
+class GoldAirData(BaseModel):
+    gold_air_data: list[GoldAirDict]
 
 # Golden Data Example
 
 gold_cities = {
-    "city_name": "Paris",
     "state": "Île-de-France Region",
     "country": "France",
     "lat": 48.85341,
     "lon": 2.3488,
     "population": 2138551,
-    "elevation": 42.0
+    "elevation": 42.0,
+    "city": "Paris",
+    "country": "France"
 }
 
-gold_air_data = {
-    "longitude": -73.98,
-    "latitude": 40.74,
-    "city": "New York",
-    "country": "United States",
+gold_air_data = [{
     "date_time": "2025-05-01T21:00:00",
     "co": 130.95, 
     "no2": 0.96, 
@@ -225,9 +235,13 @@ gold_air_data = {
     "aqi": 2,
     "retrieve_date": "2026-10-11",
     "sentiment_label": 'fair',
-    "running_average": 2.67,
-    "city_id": 3
-}
+    "city_id": 3,
+    "aqi_rolling_7d": 2.67,
+    "pm2_5_rolling_7d": 10.5,
+    "llm_response": "Air quality is currently moderate, with an AQI of 3. PM2.5 is measured at 18.5 μg/m³, "
+                    "slightly above its seven-day average of 16.2 μg/m³. The seven-day AQI average of 2.7 "
+                    "provides additional context for recent conditions."
+}]
 
 # --- Function Signatures ---
 
@@ -249,13 +263,21 @@ def extract(city_name: str, latitude: float, longitude: float, date: str) -> dic
     # return a dict instead of a list (this will actually later be a RawAirPollutionRecord)
     return {}
 
-def load_raw(raw_records: list) -> None:
+def load_raw_cities(supabase_client: Client, data: dict):
     # takes a list of raw data instances and loads the raw data into the database
     # uses the defined raw schema to read and write
     # try/except blocks to check for upload issues, displays warnings and updates progress
 
-    # Returns nothing
-    pass
+    # Returns numbers of records saved (1)
+    return 1
+
+def load_raw_air_pollution(supabase_client: Client, data: dict):
+        # takes a list of raw data instances and loads the raw data into the database
+    # uses the defined raw schema to read and write
+    # try/except blocks to check for upload issues, displays warnings and updates progress
+
+    # Returns numbers of records saved (1)
+    return 1
 
 def transform(raw_records: list) -> list:
     # takes a list of raw data instances. Cleans and transforms the data
@@ -266,7 +288,7 @@ def transform(raw_records: list) -> list:
 # --- Input Configuration ---
 
 city: str                               # accepts city names and zipcodes
-date_range: Optional[str] = ""          # format YYYY-MM-DD for past 60 days, delimiter " - "
+date_range: Optional[str] = ""          # format YYYY-MM-DD for past 60 days, delimiter " - ", default is today
 
 # Input Example
 
