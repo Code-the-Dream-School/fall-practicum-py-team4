@@ -1,5 +1,6 @@
 import time
 from prefect import flow, get_run_logger
+from pipeline.utils.track_runs import log_flow_success, log_flow_failure
 from pipeline.orchestration.tasks import (
     generate_execution_plan,
     check_geocoding_cache,
@@ -13,7 +14,7 @@ from pipeline.orchestration.tasks import (
 )
 
 
-@flow(name="City Air Tracker ETL", log_prints=True)
+@flow(name="City Air Tracker ETL", log_prints=True, on_completion=[log_flow_success], on_failure=[log_flow_failure])
 def main_etl_flow(cities: list[str] = None):
     """Main orchestration flow handling multiple cities."""
 
