@@ -1,6 +1,7 @@
 from collections.abc import Mapping
 from datetime import datetime, timedelta
 from typing import Any
+from supabase import Client
 
 ROLLING_WINDOW = timedelta(days=7)
 
@@ -13,6 +14,56 @@ def get_timestamp(reading: Mapping[str, Any], index: int) -> datetime:
     if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
         raise ValueError(f"readings[{index}].date_time must be a timezone-aware datetime")
     return value
+
+
+def fetch_historical_readings(
+    supabase_client: Client,
+    city_id: int,
+    current_readings: list[Mapping[str, Any]],
+    city_name: str,
+    table_name: str = "gold_cities",
+) -> list[dict[str, Any]]:
+    """
+    Queries Supabase for the previous 6 days of readings for a specific city,
+    parses timestamps, and combines them with the incoming 24-hour batch.
+    """
+    if not current_readings:
+        return []
+
+    # Determine the time window boundary from the current batch
+    timestamps = [get_timestamp(r, i) for i, r in enumerate(current_readings)]
+    batch_start = min(timestamps)
+    
+    # Define lookback window (6 days prior to the current batch start)
+    history_start = batch_start - (ROLLING_WINDOW - timedelta(days=1))
+
+    try:
+        response = (
+            supabase_client.table(table_name)
+            .select("*")
+            .eq("city_id", city_id)
+            .gte("date_time", history_start.isoformat())
+            .lt("date_time", batch_start.isoformat())
+            .order("date_time", desc=False)
+            .execute()
+        )
+    except Exception as e:
+        raise RuntimeError(f"Failed to fetch historical readings for {city_name}: {e}") from e
+    
+    historical_rows = response.data or []
+
+    # Parse database string timestamps back into timezone-aware datetime objects
+    parsed_history = []
+    for row in historical_rows:
+        dt_val = row.get("date_time")
+        if isinstance(dt_val, str):
+            row["date_time"] = datetime.fromisoformat(dt_val.replace("Z", "+00:00"))
+        parsed_history.append(row)
+
+    # Combine historical records with the current 24-hour batch
+    combined_readings = parsed_history + [dict(r) for r in current_readings]
+
+    return combined_readings
 
 
 def add_rolling_average(readings: list[Mapping[str, Any]], field: str, window: timedelta = ROLLING_WINDOW) -> list[dict[str, Any]]:

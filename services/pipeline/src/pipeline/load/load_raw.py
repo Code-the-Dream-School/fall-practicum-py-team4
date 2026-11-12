@@ -54,7 +54,7 @@ def load_raw_cities(supabase_client: Client, data: dict):
         ).execute()
 
         LOG.info("Successfully loaded geocoding info for %s", city)
-        return response
+        return 1
 
     # raises an error if the record failed to insert/upsert to the DB    
     except Exception as e:
@@ -117,7 +117,7 @@ def load_raw_air_pollution(supabase_client: Client, data: dict):
         ).execute()
 
         LOG.info("Successfully loaded raw air pollution data for %s at date %s", city, target_date)
-        return response
+        return 1
 
     # raises an error if the record failed to insert/upsert to the DB    
     except Exception as e:
