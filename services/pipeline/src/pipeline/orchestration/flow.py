@@ -14,6 +14,8 @@ from pipeline.orchestration.tasks import (
 )
 
 
+# --- PHASE 1: Core Data ETL Flow ---
+# this name has to match on the planner
 @flow(name="City Air Tracker ETL", log_prints=True, on_completion=[log_flow_success], on_failure=[log_flow_failure])
 def main_etl_flow(cities: list[str] = None):
     """Main orchestration flow handling multiple cities."""
@@ -92,10 +94,30 @@ def main_etl_flow(cities: list[str] = None):
         except Exception as e:
             logger.error(f"Failed to process pipeline for {city_name}: {e}")
             continue
-
-    #llm_enrichment_added()
         
-    logger.info("Pipeline execution completed successfully!")
+    logger.info("Phase 1 ETL execution completed successfully!")
 
+
+# --- PHASE 2: LLM Enrichment Flow --
+# @flow(
+#     name="City Air Tracker LLM Enrichment", 
+#     log_prints=True, 
+#     on_completion=[log_flow_success], 
+#     on_failure=[log_flow_failure]
+# )
+# def llm_enrichment_flow():
+#     """Phase 2: Scans for un-enriched rows (NULL llm_response), batches them, and calls LLM."""
+#     logger = get_run_logger()
+#     logger.info("Starting Phase 2 LLM Enrichment Worker Flow")
+    
+#     try:
+#         # Calls your paginated worker task that scans nulls, aggregates by date, and updates DB
+#         run_llm_enrichment()
+#         logger.info("Phase 2 LLM Enrichment completed successfully!")
+#     except Exception as e:
+#         logger.error(f"LLM Enrichment flow failed: {e}")
+#         raise e
+
+    
 if __name__ == "__main__":
     main_etl_flow()
