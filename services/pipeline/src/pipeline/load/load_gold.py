@@ -1,6 +1,6 @@
-import os
+
 from supabase import create_client, Client
-from datetime import datetime, timezone
+from datetime import datetime
 from dotenv import load_dotenv
 import logging
 
@@ -41,6 +41,7 @@ def load_gold_cities(supabase_client: Client, data: dict):
     if (
         not data
         or not isinstance(data, dict)
+        or "city" not in data
     ):
         LOG.warning("Invalid or empty data payload provided to load_gold")
         raise ValueError("Invalid or empty data payload provided to load_gold.")
@@ -90,6 +91,8 @@ def load_gold_air_data(supabase_client: Client, data: list):
     if (
         not data
         or not isinstance(data, list)
+        or not all(isinstance(row, dict) and "date_time" in row for row in data)
+
     ):
         LOG.warning("Invalid or empty data payload provided to load_gold")
         raise ValueError("Invalid or empty data payload provided to load_gold.")
