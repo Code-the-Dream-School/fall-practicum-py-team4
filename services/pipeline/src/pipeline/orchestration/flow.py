@@ -26,6 +26,7 @@ def main_etl_flow(cities: list[str] = None):
     logger = get_run_logger()
     logger.info(f"Starting ETL Pipeline for {len(cities)} cities")
 
+    logger.info(f"Defining Execution plan")
     # Define execution plan (Backfilling, Incremental Extraction)
     execution_plan = generate_execution_plan(cities)
     
@@ -55,11 +56,15 @@ def main_etl_flow(cities: list[str] = None):
                 logger.info(f"No cache found. Fetching geocoding from OpenMeteo for {city_name}")
                 location_data = fetch_geocoding(city_name)
                 load_raw_cities_task(location_data)
-
                 logger.info(f"Coordinates for {city_name} saved to cities_raw")
-                # Saved fetched data to gold_cities
+
+                logger.info(f"Transforming data for {city_name}...")
                 transform_city(location_data)
-                logger.info(f"Coordinates for {city_name} saved to gold_cities")
+                logger.info(f"Formatted data for {city_name}")
+
+                logger.info(f"Saving golden data for {city_name} on gold_cities")
+                # Save data to gold_cities
+                logger.info(f"Data for {city_name} saved to gold_cities")
 
                 # Re-query the cache so we have the city_id in hand
                 cached_data = check_geocoding_cache(city_name)
@@ -77,9 +82,12 @@ def main_etl_flow(cities: list[str] = None):
                 if pollution_data:
                     logger.info(f"Succesfully fetched air pollution for {city_name} on date: {target_date}...")
 
+
+                    logger.info(f"Saving raw data for {city_name} on date: {target_date}...")
                     load_raw_air_pollution_task(pollution_data)
                     logger.info(f"Saved raw data for {city_name} on date: {target_date}...")
 
+                    logger.info(f"Transforming data for {city_name} on date: {target_date}...")
                     air_count, formatted_gold = transform_air(pollution_data, city_id)
                     logger.info(f"Formatted {air_count} air records for {city_name} on date: {target_date}...")
 
