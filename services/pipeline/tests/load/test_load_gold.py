@@ -27,6 +27,15 @@ SAMPLE_GOLD_CITY = {
     "country": "united states"
 }
 
+SAMPLE_GOLD_CITY_MISSING = {
+    "state": "new york",
+    "lon": -74.006,
+    "population": 8804190,
+    "elevation": 10.0,
+    "city": "new york",
+    "country": "united states"
+}
+
 SAMPLE_GOLD_AIR = [
     {
         "date_time": "2025-05-01T00:00:00+00:00",
@@ -35,7 +44,7 @@ SAMPLE_GOLD_AIR = [
         "no2": 11.75,
         "aqi": 2,
         "retrieve_date": "2026-10-31",
-        "sentiment_label": "",
+        "sentiment_label": "Fair",
         "city_id": 1,
         "aqi_rolling_7d": 0.0,
         "pm2_5_rolling_7d": 0.0,
@@ -48,7 +57,7 @@ SAMPLE_GOLD_AIR = [
         "no2": 12.28,
         "aqi": 2,
         "retrieve_date": "2026-10-31",
-        "sentiment_label": "",
+        "sentiment_label": "Fair",
         "city_id": 1,
         "aqi_rolling_7d": 0.0,
         "pm2_5_rolling_7d": 0.0,
@@ -61,7 +70,22 @@ SAMPLE_GOLD_AIR = [
         "no2": 12.32,
         "aqi": 2,
         "retrieve_date": "2026-10-31",
-        "sentiment_label": "",
+        "sentiment_label": "Fair",
+        "city_id": 1,
+        "aqi_rolling_7d": 0.0,
+        "pm2_5_rolling_7d": 0.0,
+        "llm_response": ""
+    }
+]
+
+SAMPLE_GOLD_AIR_MISSING = [
+    {
+        "date_time": "2025-05-01T02:00:00+00:00",
+        "co": 217.08,
+        "pm2_5": 10.01,
+        "no2": 12.32,
+        "retrieve_date": "2026-10-31",
+        "sentiment_label": "Fair",
         "city_id": 1,
         "aqi_rolling_7d": 0.0,
         "pm2_5_rolling_7d": 0.0,
@@ -99,12 +123,54 @@ def test_serialize_pass_through():
 # --- Tests for load_gold_cities ---
 
 
-def test_load_gold_cities():
-    pass
+def test_load_gold_cities(real_supabase_client, SAMPLE_GOLD_CITY):
+    """Test load of cleaned city data"""
+    response = load_gold_cities(real_supabase_client, SAMPLE_GOLD_CITY)
+    assert response == 1
+
+
+def test_load_gold_cities_idempotency(real_supabase_client, SAMPLE_GOLD_CITY):
+    """Test idempotency of load_gold_cities"""
+    load_gold_cities(real_supabase_client, SAMPLE_GOLD_CITY)
+    response = load_gold_cities(real_supabase_client, SAMPLE_GOLD_CITY)
+    assert response == 1
+
+
+def test_empty_load_gold_cities(real_supabase_client):
+    """Test an empty set passing into load_gold_cities raises ValueError"""
+    with pytest.raises(ValueError, match="Invalid or empty data payload"):
+        load_gold_cities(real_supabase_client, data={})
+
+
+def test_missing_value_gold_cities(real_supabase_client, SAMPLE_GOLD_CITY_MISSING):
+    """Test passing missing value into load_gold_cities raises ValueError"""
+    with pytest.raises(ValueError, match="Invalid or empty data payload"):
+        load_gold_cities(real_supabase_client, SAMPLE_GOLD_CITY_MISSING)
 
 
 # --- Tests for load_gold_air_data ---
 
 
-def test_load_gold_air_data():
-    pass
+def test_load_gold_air_data(real_supabase_client, SAMPLE_GOLD_CITY):
+    """Test load of cleaned city data"""
+    response = load_gold_air_data(real_supabase_client, SAMPLE_GOLD_CITY)
+    assert response == 1
+
+
+def test_load_gold_air_data_idempotency(real_supabase_client, SAMPLE_GOLD_CITY):
+    """Test idempotency of load_gold_cities"""
+    load_gold_air_data(real_supabase_client, SAMPLE_GOLD_CITY)
+    response = load_gold_air_data(real_supabase_client, SAMPLE_GOLD_CITY)
+    assert response == 1
+
+
+def test_empty_load_gold_air_data(real_supabase_client):
+    """Test an empty set passing into load_gold_cities raises ValueError"""
+    with pytest.raises(ValueError, match="Invalid or empty data payload"):
+        load_gold_air_data(real_supabase_client, data=[{}])
+
+
+def test_missing_value_gold_air_data(real_supabase_client, SAMPLE_GOLD_AIR_MISSING):
+    """Test passing missing value into load_gold_cities raises ValueError"""
+    with pytest.raises(ValueError, match="Invalid or empty data payload"):
+        load_gold_air_data(real_supabase_client, SAMPLE_GOLD_AIR_MISSING)
