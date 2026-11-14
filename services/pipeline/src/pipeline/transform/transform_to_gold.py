@@ -1,7 +1,6 @@
 import logging
 
 from datetime import datetime, timezone
-from dotenv import load_dotenv
 from contracts.data_contracts import GoldCities, GoldAirData
 from pipeline.transform.sentiment_label import aqi_to_sentiment
 
@@ -16,7 +15,6 @@ def convert_unix_to_datetime(unix: int) -> datetime:
 
     date_time = datetime.fromtimestamp(unix, timezone.utc)
     return date_time.replace(minute=0, second=0, microsecond=0)
-
 
 def transform_city_data(city_record: dict) -> dict:
     """Takes a raw city record. Enriches the record and returns a dictionary"""
@@ -58,15 +56,14 @@ def transform_city_data(city_record: dict) -> dict:
 
     return validated_record.model_dump()
 
-
 def parse_air_data(air_record: dict, city_id: int) -> list[dict]:
     """
     Flattens each hourly reading in the air record into a row for gold_air_data.
     Skips readings with no timestamp; other missing values are stored as None.
     """
 
-    retrieve_date = air_record.get("retrieve_date")
-    readings = air_record.get("data", {}).get("list", [])
+    retrieve_date = air_record.get("extracted_at")
+    readings = air_record.get("payload", {}).get("list", [])
 
     flat_air_records = []
     for reading in readings:

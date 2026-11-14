@@ -11,13 +11,11 @@ from pipeline.transform.transform_to_gold import (
     transform_air_data,
     transform_city_data,
 )
-from supabase import create_client
-
-load_dotenv()
 
 log = logging.getLogger(__name__)
 
 timestamp = 1793841909
+city_id = 1
 
 # Name that will never collide with real pipeline data
 TEST_CITY = "pytest city"
@@ -43,13 +41,13 @@ SAMPLE_RAW_CITY_PAYLOAD = {
             'timezone': 'America/New_York'
         }]
     },
-    'retrieve_date': '2026-11-01'
+    'extracted_at': '2026-11-01'
 }
 
 SAMPLE_RAW_AIR_PAYLOAD = {
     "city": "new york",
     "target_date": "2025-05-01",
-    "data": {
+    "payload": {
         "coord": {
             "lon": -74.01,
             "lat": 40.71
@@ -109,7 +107,7 @@ SAMPLE_RAW_AIR_PAYLOAD = {
         "start": 1746057600,
         "end": 1746143999
     },
-    "retrieve_date": "2026-10-31"
+    "extracted_at": "2026-10-31"
 }
 
 SAMPLE_GOLD_CITY = {
@@ -164,61 +162,24 @@ SAMPLE_GOLD_AIR = [
     }
 ]
 
-# --- Fixtures ---
-
-
-@pytest.fixture
-def real_supabase_client():
-    """Fixture to safely initialize a real Supabase client only for integration tests."""
-    load_dotenv()
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_KEY")
-    if not url or not key:
-        pytest.skip("Supabase credentials not available for integration tests")
-    return create_client(url, key)
-
-
-@pytest.fixture
-def gold_city(real_supabase_client):
-    """Insert a test city into gold_cities, yield its id, then delete it."""
-    row = {**SAMPLE_GOLD_CITY, "city": TEST_CITY}
-    response = (
-        real_supabase_client.table("gold_cities")
-        .upsert(row, on_conflict="city")
-        .execute()
-    )
-    city_id = response.data[0]["id"]
-    log.info("Inserted test city %s", response.data)
-
-    yield city_id
-
-    # Teardown runs even if the test fails
-    (
-        real_supabase_client.table("gold_cities")
-        .delete()
-        .eq("city", TEST_CITY)
-        .execute()
-    )
-    log.info("Deleted test city %s", TEST_CITY)
-
 # --- Tests ---
 
-
+@pytest.mark.unit
 def test_convert_unix_to_datetime():
     assert convert_unix_to_datetime(timestamp) == datetime(2026, 11, 5, 1, 0, tzinfo=timezone.utc)
 
-
+@pytest.mark.unit
 def test_transform_city_data():
     flat_city = transform_city_data(SAMPLE_RAW_CITY_PAYLOAD)
     assert flat_city == SAMPLE_GOLD_CITY
 
-
+@pytest.mark.unit
 def test_invalid_city_record():
     city_record = {"payload": {"results": [[]]}}
     with pytest.raises(ValueError):
         transform_city_data(city_record)
 
-
+@pytest.mark.unit
 def test_missing_city_variable():
     city_record = {**copy.deepcopy(SAMPLE_RAW_CITY_PAYLOAD)}
     city_record['payload']['results'][0]['name'] = ''
@@ -226,57 +187,60 @@ def test_missing_city_variable():
     expected_city_missing = {**copy.deepcopy(SAMPLE_GOLD_CITY), "city": ''}
     assert city_missing == expected_city_missing
 
-
+@pytest.mark.unit
 def test_city_validation_fail():
     city_record = {**copy.deepcopy(SAMPLE_RAW_CITY_PAYLOAD)}
     city_record['payload']['results'][0]['name'] = 6
     with pytest.raises(RuntimeError):
         transform_city_data(city_record)
 
-
+@pytest.mark.unit
 def test_empty_city_record():
     city_record = {}
     with pytest.raises(ValueError):
         transform_city_data(city_record)
 
-
+@pytest.mark.unit
 def test_parse_air_data():
     flat_air = parse_air_data(SAMPLE_RAW_AIR_PAYLOAD, 1)
     assert flat_air == SAMPLE_GOLD_AIR
 
-
+@pytest.mark.unit
 def test_parse_validation_fail():
-    air_record = {**copy.deepcopy(SAMPLE_RAW_AIR_PAYLOAD), "city": TEST_CITY, "retrieve_date": 0}
+    air_record = {**copy.deepcopy(SAMPLE_RAW_AIR_PAYLOAD), "city": TEST_CITY, "extracted_at": 0}
     with pytest.raises(RuntimeError):
         parse_air_data(air_record, 1)
 
-
-def test_transform_air_data(gold_city):
+@pytest.mark.unit
+def test_transform_air_data():
+    city_id = 1
     air_record = {**copy.deepcopy(SAMPLE_RAW_AIR_PAYLOAD), "city": TEST_CITY}
-    gold_air = transform_air_data(air_record, gold_city)
+    gold_air = transform_air_data(air_record, city_id)
     expected_gold_air = [
-        {**record, "city_id": gold_city}
+        {**record, "city_id": city_id}
         for record in SAMPLE_GOLD_AIR
     ]
     assert gold_air == expected_gold_air
 
-
-def test_missing_air_variable(gold_city):
-    air_record_raw_missing = {**copy.deepcopy(SAMPLE_RAW_AIR_PAYLOAD), "city": TEST_CITY, "retrieve_date": ''}
-    gold_air_missing = transform_air_data(air_record_raw_missing, gold_city)
+@pytest.mark.unit
+def test_missing_air_variable():
+    city_id = 1
+    air_record_raw_missing = {**copy.deepcopy(SAMPLE_RAW_AIR_PAYLOAD), "city": TEST_CITY, "extracted_at": ''}
+    gold_air_missing = transform_air_data(air_record_raw_missing, city_id)
     expected_gold_air_missing = [
-        {**record, "city_id": gold_city, "retrieve_date": ''}
+        {**record, "city_id": city_id, "retrieve_date": ''}
         for record in SAMPLE_GOLD_AIR
     ]
     assert gold_air_missing == expected_gold_air_missing
 
-
+@pytest.mark.unit
 def test_incorrect_city_id():
     air_record = {**copy.deepcopy(SAMPLE_RAW_AIR_PAYLOAD), "city": TEST_CITY}
     with pytest.raises(ValueError):
             transform_air_data(air_record, 0)
 
-
-def test_empty_air_data(real_supabase_client):
+@pytest.mark.unit
+def test_empty_air_data():
+    city_id = 1
     with pytest.raises(ValueError):
         transform_air_data({}, 0)
