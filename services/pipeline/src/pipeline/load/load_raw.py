@@ -96,8 +96,6 @@ def load_raw_air_pollution(supabase_client: Client, data: dict):
     retrieve_date = data.get("extracted_at")
     target_date = data.get("target_date")
     request_params = data.get("request_params") or {}
-    start = request_params.get("start")
-    end = request_params.get("end")
 
     # Inserts a record to the DB
     try: 
@@ -105,8 +103,7 @@ def load_raw_air_pollution(supabase_client: Client, data: dict):
             "city": city,
             "target_date": target_date,
             "payload": payload,
-            "start": start,
-            "end": end,
+            "request_params": request_params,
             "extracted_at": retrieve_date
         }
 
