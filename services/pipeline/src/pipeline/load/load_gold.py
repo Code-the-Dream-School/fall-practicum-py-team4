@@ -1,10 +1,7 @@
 
-from supabase import create_client, Client
+from supabase import Client
 from datetime import datetime
-from dotenv import load_dotenv
 import logging
-
-load_dotenv()
 
 # Logging client for tracking successful data loads and debugging failures.
 LOG = logging.getLogger(__name__)
@@ -21,9 +18,10 @@ def serialize_record(record: dict) -> dict:
     }
 
 
-def load_gold_cities(supabase_client: Client, data: dict):
+def load_gold_cities(supabase_client: Client, data: dict) -> int:
     """
     Inserts gold city responses into gold_cities using the Supabase Python Client.
+    Returns 1 to signify successful upsert of 1 row.
     
     Uniqueness Rule:
         The gold_table must have a unique constraint on city to ensure that running the loader
@@ -51,16 +49,11 @@ def load_gold_cities(supabase_client: Client, data: dict):
 
         # Upsert, so it ensures running twice creates no duplicates (unique index on city)
         response = supabase_client.table("gold_cities").upsert(
-            serialize_record(data),
+            data,
             on_conflict="city"
         ).execute()
 
-        if (
-            response 
-            and isinstance(response.data, list)
-            and isinstance(response.data[0], dict)
-        ):
-            LOG.info("Successfully loaded gold data info for %s", response.data[0].get('city'))
+        LOG.info("Successfully loaded gold data info for %s", response.data[0].get('city'))
         return 1
     
     # raises an error if the record failed to insert/upsert to the DB
@@ -69,14 +62,15 @@ def load_gold_cities(supabase_client: Client, data: dict):
         raise RuntimeError(f"Failed to insert gold data into Supabase: {e}") from e
 
 
-def load_gold_air_data(supabase_client: Client, data: list):
+def load_gold_air_data(supabase_client: Client, data: list) -> int:
     """
     Inserts gold air pollution data and its associated metadata into gold_air_data
     using the Supabase Python Client.
+    Returns number of rows successfully upserted to Supabase
     
     Uniqueness Rule:
         The gold_table must have a unique constraint or composite unique index on
-        (city and target_date) to ensure that running the loader multiple times
+        (city_id and date_time) to ensure that running the loader multiple times
         for the location and day performs an upsert instead of inserting duplicates.
     """
 
@@ -92,6 +86,7 @@ def load_gold_air_data(supabase_client: Client, data: list):
         not data
         or not isinstance(data, list)
         or not all(isinstance(row, dict) and "date_time" in row for row in data)
+        or not all(isinstance(row, dict) and "city_id" in row for row in data)
 
     ):
         LOG.warning("Invalid or empty data payload provided to load_gold")
@@ -106,7 +101,7 @@ def load_gold_air_data(supabase_client: Client, data: list):
         ).execute()
 
         LOG.info("Successfully loaded %s record(s) of gold air data", len(response.data))
-        return 1
+        return len(response.data)
 
     # raises an error if the record failed to insert/upsert to the DB    
     except Exception as e:
