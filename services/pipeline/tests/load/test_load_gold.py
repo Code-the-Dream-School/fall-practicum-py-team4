@@ -115,6 +115,8 @@ def gold_city(real_supabase_client):
         .upsert(SAMPLE_GOLD_CITY, on_conflict="city")
         .execute()
     )
+    if not response or not response.data:
+        pytest.fail("Failed to setup gold_city fixture in Supabase.")
     yield response.data[0]["id"]
     delete_test_city(real_supabase_client)
 
