@@ -14,7 +14,7 @@ def get_city_from_cache(city: str, supabase_client: Client) -> Optional[dict]:
     
     try:
         response = supabase_client.table("gold_cities") \
-            .select("city, lat, lon") \
+            .select("id, city, lat, lon") \
             .eq("city", city_name)\
             .limit(1)\
             .execute()
@@ -22,6 +22,7 @@ def get_city_from_cache(city: str, supabase_client: Client) -> Optional[dict]:
         if response.data:
             record = response.data[0]
             return {
+                'city_id' : record.get('id'),
                 'city': record.get('city'),
                 'latitude': record.get('lat'),
                 'longitude': record.get('lon')

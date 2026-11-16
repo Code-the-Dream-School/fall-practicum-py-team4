@@ -2,6 +2,7 @@ import datetime
 
 from pydantic import BaseModel, model_validator
 from typing import Optional
+from supabase import Client
 
 # --- Raw Schemas ---
 
@@ -143,7 +144,6 @@ raw_meteo = {
 
 # OpenWeather
 raw_data = {
-    "retrieve_date": "2026-10-11",
     "coord": {
         "lon": 50.0,
         "lat": 50.0
@@ -179,10 +179,12 @@ raw_city = {
 raw_air_data = {
     "city": "New York",
     "target_date": "2025-05-01",
-    "data": {},
-    "retrieve_date": "2026-10-11",
-    "start": 1746057600,
-    "end": 1746061200          
+    "payload": {},
+    "extracted_at": "2026-10-11",
+    "request_params": {
+        "start": 1746057600,
+        "end": 1746143999
+        },        
 }
 
 # --- Golden Schema ---
@@ -207,7 +209,7 @@ class GoldAirDict(BaseModel):
     city_id: int
     aqi_rolling_7d: Optional[float] = None
     pm2_5_rolling_7d: Optional[float] = None
-    llm_response: str
+    llm_response: Optional[str] = None
 
 class GoldAirData(BaseModel):
     gold_air_data: list[GoldAirDict]
@@ -221,7 +223,7 @@ gold_cities = {
     "lon": 2.3488,
     "population": 2138551,
     "elevation": 42.0,
-    "city_name": "Paris",
+    "city": "Paris",
     "country": "France"
 }
 
@@ -261,13 +263,21 @@ def extract(city_name: str, latitude: float, longitude: float, date: str) -> dic
     # return a dict instead of a list (this will actually later be a RawAirPollutionRecord)
     return {}
 
-def load_raw(raw_records: list) -> None:
+def load_raw_cities(supabase_client: Client, data: dict):
     # takes a list of raw data instances and loads the raw data into the database
     # uses the defined raw schema to read and write
     # try/except blocks to check for upload issues, displays warnings and updates progress
 
-    # Returns nothing
-    pass
+    # Returns numbers of records saved (1)
+    return 1
+
+def load_raw_air_pollution(supabase_client: Client, data: dict):
+        # takes a list of raw data instances and loads the raw data into the database
+    # uses the defined raw schema to read and write
+    # try/except blocks to check for upload issues, displays warnings and updates progress
+
+    # Returns numbers of records saved (1)
+    return 1
 
 def transform(raw_records: list) -> list:
     # takes a list of raw data instances. Cleans and transforms the data
