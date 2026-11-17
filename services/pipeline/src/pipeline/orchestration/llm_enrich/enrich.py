@@ -1,9 +1,8 @@
-
 import json
 import logging
 import os
-from pathlib import Path
 import re
+from pathlib import Path
 
 from .openrouter_client import generate_summary
 
@@ -12,7 +11,7 @@ PROMPT = (
     / 'air_quality_summary.txt'
 ).read_text(encoding='utf-8')
 
-PROMPT_VERSION = 'v1'
+PROMPT_VERSION = 'v2'
 BATCH_SIZE = 24
 QUERY_SIZE = 1000
 
@@ -22,12 +21,27 @@ FIELDS = (
     'co',
     'pm2_5',
     'aqi_rolling_7d',
-    'pm2_5_rolling_7d'
+    'pm2_5_rolling_7d',
 )
 
 
+class EnrichmentBatchError(Exception):
+    """LLM batch failed validation."""
+
+
+class EnrichmentDatabaseError(Exception):
+    """Database operation failed."""
+
+
+class EnrichmentConfigurationError(Exception):
+    """Required enrichment configuration is missing."""
+
+
 def valid_summary(summary):
-    if not isinstance(summary, str) or not 1 <= len(summary.strip()) <= 500:
+    if not isinstance(summary, str):
+        return False
+
+    if not 1 <= len(summary.strip()) <= 500:
         return False
 
     text = re.sub(r'(?<=\d)\.(?=\d)', '', summary)
@@ -36,83 +50,115 @@ def valid_summary(summary):
     return 1 <= len(sentences) <= 3
 
 
-def valid_record(row):
-    return (
-        row.get('aqi') in (1, 2, 3, 4, 5)
-        and any(row.get(key) is not None for key in ('co', 'pm2_5'))
-    )
+def parse_response(response):
+    if isinstance(response, str):
+        cleaned = response.strip()
+
+        if cleaned.startswith('```'):
+            cleaned = re.sub(
+                r'^```(?:json)?\s*',
+                '',
+                cleaned,
+                flags=re.IGNORECASE
+            )
+            cleaned = re.sub(r'\s*```$', '', cleaned)
+
+        response = json.loads(cleaned)
+
+    if not isinstance(response, dict):
+        raise ValueError('Expected JSON object')
+
+    return response
 
 
 def enrich_batch(batch):
+    if not batch or len(batch) > BATCH_SIZE:
+        raise ValueError('Invalid batch size')
+
     records = [
         {
-            'id': row['id'],
+            'position': position,
             **{
                 key: row[key]
                 for key in FIELDS
                 if row.get(key) is not None
             }
         }
-        for row in batch
+        for position, row in enumerate(batch)
     ]
 
     prompt = (
-        f'{PROMPT}\n\n'
-        f'Measurements:\n{json.dumps({"records": records})}'
+        f'{PROMPT}\n\nMeasurements:\n'
+        f'{json.dumps({"records": records})}'
     )
 
-    expected_ids = {row['id'] for row in batch}
+    expected_positions = set(range(len(batch)))
 
-    for attempt in range(2):
-        try:
-            response = generate_summary(prompt)
+    try:
+        response = generate_summary(prompt)
+        response_data = parse_response(response)
 
-            if isinstance(response, str):
-                response = json.loads(response)
+        items = response_data.get('results')
 
-            if not isinstance(response, dict):
-                raise ValueError('Expected a JSON object')
+        if not isinstance(items, list):
+            raise ValueError('Missing results array')
 
-            items = response.get('results')
-
-            if not isinstance(items, list):
-                raise ValueError('Missing results array')
-
-            summaries = {}
-
-            for item in items:
-                if not isinstance(item, dict):
-                    raise ValueError('Invalid result object')
-
-                row_id = item.get('id')
-                summary = item.get('llm_response')
-
-                if row_id not in expected_ids:
-                    raise ValueError(f'Unexpected ID: {row_id}')
-
-                if row_id in summaries:
-                    raise ValueError(f'Duplicate ID: {row_id}')
-
-                if valid_summary(summary):
-                    summaries[row_id] = summary.strip()
-                else:
-                    summaries[row_id] = None
-
-            return summaries
-
-        except Exception as exc:
-            logging.warning(
-                'Batch attempt %s failed: %s',
-                attempt + 1,
-                exc
+        if len(items) != len(batch):
+            raise ValueError(
+                f'Expected {len(batch)} results, '
+                f'received {len(items)}'
             )
 
-    return {}
+        summaries = {}
+
+        for item in items:
+            if not isinstance(item, dict):
+                raise ValueError('Invalid result object')
+
+            position = item.get('position')
+            summary = item.get('llm_response')
+
+            if (
+                type(position) is not int
+                or position not in expected_positions
+            ):
+                raise ValueError(
+                    f'Unexpected position: {position}'
+                )
+
+            if position in summaries:
+                raise ValueError(
+                    f'Duplicate position: {position}'
+                )
+
+            if not valid_summary(summary):
+                raise ValueError(
+                    f'Invalid summary at position {position}'
+                )
+
+            summaries[position] = summary.strip()
+
+        if set(summaries) != expected_positions:
+            raise ValueError('Missing expected positions')
+
+        return [
+            {
+                'id': row['id'],
+                'llm_response': summaries[position]
+            }
+            for position, row in enumerate(batch)
+        ]
+
+    except (ValueError, KeyError) as exc:
+        logging.exception('LLM batch validation failed')
+        raise EnrichmentBatchError(
+            f'LLM batch validation failed: {exc}'
+        ) from exc
 
 
 def update_batch(supabase, responses):
     if not responses:
-        return
+        raise ValueError('Empty batch')
 
     if len(responses) > BATCH_SIZE:
         raise ValueError('Maximum 24 records per batch')
@@ -120,29 +166,35 @@ def update_batch(supabase, responses):
     ids = [row['id'] for row in responses]
 
     if len(ids) != len(set(ids)):
-        raise ValueError('Duplicate row IDs in batch')
+        raise ValueError('Duplicate row IDs')
 
-    supabase.table('gold_air_data').upsert(
-        responses,
-        on_conflict='id'
-    ).execute()
+    if any(
+        not valid_summary(row.get('llm_response'))
+        for row in responses
+    ):
+        raise ValueError('Invalid summary in batch')
+
+    try:
+        supabase.rpc(
+            'save_enrichment_batch',
+            {'p_responses': responses}
+        ).execute()
+
+    except Exception as exc:
+        logging.exception('Failed to save enrichment batch')
+        raise EnrichmentDatabaseError(
+            f'Failed to save enrichment batch: {exc}'
+        ) from exc
 
 
-def run_enrichment(supabase):
-    results = {'success': 0}
-
-    metadata = {
-        'llm_model': os.environ['MODEL_NAME'],
-        'prompt_version': PROMPT_VERSION
-    }
-
-    last_id = None
-
-    while True:
+def fetch_records(supabase, last_id):
+    try:
         query = (
             supabase.table('gold_air_data')
-            .select('id,aqi,sentiment_label,co,pm2_5,'
-                    'aqi_rolling_7d,pm2_5_rolling_7d')
+            .select(
+                'id,aqi,sentiment_label,co,pm2_5,'
+                'aqi_rolling_7d,pm2_5_rolling_7d'
+            )
             .is_('llm_response', 'null')
             .order('id')
             .limit(QUERY_SIZE)
@@ -151,43 +203,62 @@ def run_enrichment(supabase):
         if last_id is not None:
             query = query.gt('id', last_id)
 
-        rows = query.execute().data or []
+        response = query.execute()
 
-        if not rows:
-            break
+        if response.data is None:
+            raise ValueError('Supabase returned no data payload')
 
-        last_id = rows[-1]['id']
+        return response.data
 
-        for start in range(0, len(rows), BATCH_SIZE):
-            batch = rows[start:start + BATCH_SIZE]
+    except Exception as exc:
+        logging.exception('Failed to fetch enrichment records')
+        raise EnrichmentDatabaseError(
+            f'Failed to fetch enrichment records: {exc}'
+        ) from exc
 
-            valid_rows = [
-                row for row in batch
-                if valid_record(row)
-            ]
 
-            summaries = enrich_batch(valid_rows) if valid_rows else {}
+def run_enrichment(supabase):
+    llm_model = os.environ.get('OPENROUTER_MODEL')
 
-            responses = [
-                {
-                    'id': row['id'],
-                    'llm_response': summaries.get(row['id'])
-                }
-                for row in batch
-            ]
+    success = 0
+    last_id = None
 
-            try:
+    try:
+        if not llm_model:
+            raise EnrichmentConfigurationError(
+                'OPENROUTER_MODEL is not configured'
+            )
+
+        if not os.environ.get('OPENROUTER_API_KEY'):
+            raise EnrichmentConfigurationError(
+                'OPENROUTER_API_KEY is not configured'
+            )
+
+        while True:
+            rows = fetch_records(supabase, last_id)
+
+            if not rows:
+                break
+
+            last_id = rows[-1]['id']
+
+            for start in range(0, len(rows), BATCH_SIZE):
+                batch = rows[start:start + BATCH_SIZE]
+
+                responses = enrich_batch(batch)
                 update_batch(supabase, responses)
 
-                results['success'] += sum(
-                    response['llm_response'] is not None
-                    for response in responses
-                )
+                success += len(responses)
 
-            except Exception as exc:
-                logging.exception(
-                    'Database batch update failed: %s',
-                    exc
-                )
+    except Exception:
+        logging.exception(
+            'Enrichment failed after %s successfully saved records',
+            success
+        )
+        raise
 
-    return results, metadata
+    return {
+        'success': success,
+        'llm_model': llm_model,
+        'prompt_version': PROMPT_VERSION
+    }
