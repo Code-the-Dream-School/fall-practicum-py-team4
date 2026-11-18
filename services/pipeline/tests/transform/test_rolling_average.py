@@ -18,10 +18,12 @@ def test_rolling_average_warm_up_and_calculation():
 
     enriched = add_rolling_average(readings, field="aqi")
 
+    # Indices 0 through 6 (first 7 readings spanning 6 days) should be 0 during warm-up
     for i in range(7):
         assert enriched[i]["aqi_rolling_7d"] == 0, f"Row {i} should be 0 during warm-up"
 
-    assert enriched[7]["aqi_rolling_7d"] is not None
+    # Index 7 (reaching a full 7-day time span) should calculate the average
+    assert enriched[7]["aqi_rolling_7d"] > 0
 
 
 @pytest.mark.unit
