@@ -15,6 +15,7 @@ from pipeline.orchestration.tasks import (
     calculate_rolling_averages,
     load_gold_cities_task,
     load_gold_air_data_task,
+    # llm_enrichment_task
 )
 
 
@@ -151,8 +152,8 @@ def main_etl_flow(
 
                 current_stage = f"LOAD_GOLD_AIR_POLLUTION ({city_name} @ {target_date})"
                 logger.info(f"[STAGE START: {current_stage}] Saving {rolling_count} gold records")
-                load_gold_air_data_task(rolling_7d_added)
-                result_summary["counts"]["load_gold_air_records"] += rolling_count
+                loaded_count = load_gold_air_data_task(rolling_7d_added)
+                result_summary["counts"]["load_gold_air_records"] += loaded_count
 
             result_summary["succeeded_cities"].append(city_name)
             logger.info(f"[CITY SUCCESS] Successfully processed all missing dates for {city_name}")
@@ -192,7 +193,7 @@ def main_etl_flow(
     return result_summary
         
 
-# --- PHASE 2: LLM Enrichment Flow --
+#--- PHASE 2: LLM Enrichment Flow --
 # @flow(
 #     name="City Air Tracker LLM Enrichment", 
 #     log_prints=True, 
@@ -200,18 +201,17 @@ def main_etl_flow(
 #     on_failure=[log_flow_failure]
 # )
 # def llm_enrichment_flow():
-#     """Phase 2: Scans for un-enriched rows (NULL llm_response), batches them, and calls LLM."""
+#     """Phase 2: Scans for un-enriched rows, batches them, and calls LLM."""
 #     logger = get_run_logger()
 #     logger.info("Starting Phase 2 LLM Enrichment Worker Flow")
     
 #     try:
-#         # Calls your paginated worker task that scans nulls, aggregates by date, and updates DB
-#         run_llm_enrichment()
+#         llm_enrichment_task()
 #         logger.info("Phase 2 LLM Enrichment completed successfully!")
 #     except Exception as e:
 #         logger.error(f"LLM Enrichment flow failed: {e}")
 #         raise e
 
-    
+   
 if __name__ == "__main__":
     main_etl_flow()

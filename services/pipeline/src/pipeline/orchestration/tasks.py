@@ -12,6 +12,8 @@ from pipeline.transform.transform_to_gold import transform_city_data, transform_
 from pipeline.transform.rolling_average import get_timestamp, fetch_historical_readings, add_rolling_average
 from pipeline.load.load_gold import load_gold_cities, load_gold_air_data
 
+# from pipeline.orchestration.enrich import run_enrichment
+
 # Execution Plan
 @task(retries=0,
     name="Generate Execution Plan",
@@ -171,7 +173,19 @@ def load_gold_cities_task(data) -> int:
     on_failure=[log_task_failure]
 )
 def load_gold_air_data_task(data) -> dict:
-    """Loads Raw City data into Supabase raw_cities"""
+    """Loads gold air pollution data into Supabase raw_cities"""
     client = get_supabase_client()
-    load_gold_air_data(client, data)
-    return 1
+    return load_gold_air_data(client, data)
+
+# Enrich LLM
+# @task(
+#     retries=2,
+#     retry_delay_seconds=10,
+#     name="LLM Enrichment",
+#     on_completion=[log_task_success],
+#     on_failure=[log_task_failure]
+# )
+# def llm_enrichment_task() -> dict:
+#     """Enrichs data using LLM"""
+#     client = get_supabase_client()
+#     return run_enrichment(client)
