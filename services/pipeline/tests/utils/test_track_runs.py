@@ -55,15 +55,15 @@ def test_get_supabase_client_success(mock_create_client, monkeypatch):
 @pytest.mark.unit
 @patch("pipeline.utils.track_runs.get_supabase_client")
 def test_log_flow_success_executes_upsert(mock_get_client):
-    """Test that a successful flow run correctly triggers a Supabase upsert with record count."""
+    """Test that a successful flow run correctly triggers a Supabase upsert with record count and run_type."""
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
     
     mock_flow = MagicMock()
+    mock_flow.name = "city_air_tracker_pipeline"  
     
     mock_flow_run = MagicMock()
     mock_flow_run.id = "12345-abcde"
-    mock_flow_run.name = "city_air_tracker_pipeline"  
     mock_flow_run.total_run_time = timedelta(seconds=12.5)
     mock_flow_run.start_time.isoformat.return_value = "2026-11-02T10:00:00+00:00"
     
@@ -76,6 +76,7 @@ def test_log_flow_success_executes_upsert(mock_get_client):
     mock_client.table().upsert.assert_called_once_with({
         "id": "12345-abcde",
         "process": "city_air_tracker_pipeline",
+        "run_type": "FLOW",
         "status": "SUCCESS",
         "runs_time": 12.5,
         "created_at": "2026-11-02T10:00:00+00:00",
@@ -88,15 +89,15 @@ def test_log_flow_success_executes_upsert(mock_get_client):
 @pytest.mark.unit
 @patch("pipeline.utils.track_runs.get_supabase_client")
 def test_log_flow_failure_executes_upsert(mock_get_client):
-    """Test that a failed flow run triggers a Supabase upsert with 0 records added."""
+    """Test that a failed flow run triggers a Supabase upsert with 0 records added and run_type."""
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
     
     mock_flow = MagicMock()
+    mock_flow.name = "city_air_tracker_pipeline"  
     
     mock_flow_run = MagicMock()
     mock_flow_run.id = "12345-abcde"
-    mock_flow_run.name = "city_air_tracker_pipeline"  
     mock_flow_run.total_run_time = timedelta(seconds=5.0)
     mock_flow_run.start_time.isoformat.return_value = "2026-11-02T10:00:00+00:00"
     
@@ -108,6 +109,7 @@ def test_log_flow_failure_executes_upsert(mock_get_client):
     mock_client.table().upsert.assert_called_once_with({
         "id": "12345-abcde",
         "process": "city_air_tracker_pipeline",
+        "run_type": "FLOW",
         "status": "FAILED",
         "runs_time": 5.0,
         "created_at": "2026-11-02T10:00:00+00:00",
@@ -120,15 +122,15 @@ def test_log_flow_failure_executes_upsert(mock_get_client):
 @pytest.mark.unit
 @patch("pipeline.utils.track_runs.get_supabase_client")
 def test_log_task_success_executes_upsert(mock_get_client):
-    """Test that a successful task run correctly triggers a Supabase upsert with record count."""
+    """Test that a successful task run correctly triggers a Supabase upsert with record count and run_type."""
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
     
     mock_task = MagicMock()
+    mock_task.name = "extract_city_air_data"  
     
     mock_task_run = MagicMock()
     mock_task_run.id = "67890-fghij"
-    mock_task_run.name = "extract_city_air_data"  
     mock_task_run.total_run_time = timedelta(seconds=8.3)
     mock_task_run.start_time.isoformat.return_value = "2026-11-02T10:05:00+00:00"
     
@@ -141,6 +143,7 @@ def test_log_task_success_executes_upsert(mock_get_client):
     mock_client.table().upsert.assert_called_once_with({
         "id": "67890-fghij",
         "process": "extract_city_air_data",
+        "run_type": "TASK",
         "status": "SUCCESS",
         "runs_time": 8.3,
         "created_at": "2026-11-02T10:05:00+00:00",
@@ -153,15 +156,15 @@ def test_log_task_success_executes_upsert(mock_get_client):
 @pytest.mark.unit
 @patch("pipeline.utils.track_runs.get_supabase_client")
 def test_log_task_failure_executes_upsert(mock_get_client):
-    """Test that a failed task run triggers a Supabase upsert with 0 records added."""
+    """Test that a failed task run triggers a Supabase upsert with 0 records added and run_type."""
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
     
     mock_task = MagicMock()
+    mock_task.name = "extract_city_air_data"  
     
     mock_task_run = MagicMock()
     mock_task_run.id = "67890-fghij"
-    mock_task_run.name = "extract_city_air_data"  
     mock_task_run.total_run_time = timedelta(seconds=2.1)
     mock_task_run.start_time.isoformat.return_value = "2026-11-02T10:05:00+00:00"
     
@@ -173,6 +176,7 @@ def test_log_task_failure_executes_upsert(mock_get_client):
     mock_client.table().upsert.assert_called_once_with({
         "id": "67890-fghij",
         "process": "extract_city_air_data",
+        "run_type": "TASK",
         "status": "FAILED",
         "runs_time": 2.1,
         "created_at": "2026-11-02T10:05:00+00:00",
