@@ -1,6 +1,5 @@
 from datetime import datetime, timedelta, timezone
-import os
-import logging
+import os, re, logging
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
@@ -80,14 +79,17 @@ class AirPollutionPlanner:
           .limit(1)
           .execute()
       )
-      if response.data:
-        city_id = response.data[0].get("id")
-        logger.debug(f"Found city_id {city_id} for city '{normalized_city}'")
-        return city_id
-    except Exception as e:
-      logger.warning(f"Could not fetch city_id for '{normalized_city}': {e}")
-      return None
-
+    except Exception:
+      logger.exception(
+          f"Database error fetching city_id for '{normalized_city}'."
+      )
+      raise
+   
+    if response.data:
+      city_id = response.data[0].get("id")
+      logger.debug(f"Found city_id {city_id} for city '{normalized_city}'")
+      return city_id
+    
     logger.info(f"City '{normalized_city}' not found in gold_cities.")
     return None
 
@@ -106,11 +108,17 @@ class AirPollutionPlanner:
           .limit(1)
           .execute()
       )
-      if response.data:
-        dt_str = response.data[0].get("created_at")
+    except Exception:
+      logger.exception(
+          "Database error fetching last successful run time from pipeline_runs."
+      )
+      raise
+
+    if response.data:
+      dt_str = response.data[0].get("created_at")
+      if dt_str:
+        dt_str = re.sub(r"\.(\d+)", lambda m: f".{m.group(1).ljust(6, '0')[:6]}", dt_str)
         return datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-    except Exception as e:
-      logger.warning(f"Warning: Could not fetch last run time from pipeline_runs: {e}.")
     return None
 
 
@@ -176,14 +184,15 @@ class AirPollutionPlanner:
           
         # Move to the next chunk
         current_chunk_start = current_chunk_end + timedelta(days=1)
+    except Exception:
+      logger.exception(
+          f"Database error querying gold_air_data for city_id {city_id} "
+          f"(chunk starting {current_chunk_start})."
+      )
+      raise
 
       # A date is complete if it has all 24 hourly records
-      completed_dates = {d for d, count in date_counts.items() if count >= 24}
-    except Exception as e:
-      logger.error(f"Error querying gold_air_data for city_id {city_id}: {e}")
-      # Retain any dates already verified before the chunk error
-      completed_dates = {d for d, count in date_counts.items() if count >= 24}
-
+    completed_dates = {d for d, count in date_counts.items() if count >= 24}
     expected_dates = set(expected_dates)
     return sorted(list(expected_dates - completed_dates))
 
