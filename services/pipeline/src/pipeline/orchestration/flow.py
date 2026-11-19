@@ -1,5 +1,5 @@
-import time
 from typing import Any, Literal
+from pathlib import Path
 from prefect import flow, get_run_logger
 from pipeline.utils.track_runs import log_flow_success, log_flow_failure
 from pipeline.orchestration.tasks import (
@@ -18,6 +18,17 @@ from pipeline.orchestration.tasks import (
     # llm_enrichment_task
 )
 
+CITIES_FILE = Path(__file__).resolve().parents[3] / "config" / "cities.txt"
+
+def load_cities(filepath: Path = CITIES_FILE) -> list[str]:
+    if not filepath.is_file():
+        raise FileNotFoundError(f"Cities file not found: {filepath}")
+    return [
+        line.strip()
+        for line in filepath.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+
 
 # --- PHASE 1: Core Data ETL Flow ---
 @flow(name="City Air Tracker ETL", log_prints=True, on_completion=[log_flow_success], on_failure=[log_flow_failure])
@@ -28,7 +39,7 @@ def main_etl_flow(
     """Main orchestration flow handling multiple cities."""
 
     if cities is None:
-        cities = ['New York']
+        cities = load_cities()
 
     logger = get_run_logger()
     current_stage = "INITIALIZATION"

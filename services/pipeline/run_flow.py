@@ -2,7 +2,7 @@ import argparse
 import sys
 from pathlib import Path
 
-# Define root directory
+# root directory
 root_path = Path(__file__).resolve().parent.resolve().parents[2]
 
 pipeline_services_path = Path(__file__).resolve().parent
@@ -28,17 +28,23 @@ if __name__ == "__main__":
         default=None,
         help="Specify the ETL mode (only used when --phase is 'etl' or 'all'). Defaults to 'incremental'."
     )
+    parser.add_argument(
+        "--cities",
+        nargs="+",
+        default=None,
+        help="Optional list of cities to process (only used when --phase is 'etl' or 'all'). Defaults to config/cities.txt."
+    )
     
     args = parser.parse_args()
 
-    if args.mode is not None and args.phase == "enrichment":
-        parser.error("--mode can only be used when --phase is 'etl' or 'all'.")
+    if (args.mode is not None or args.cities is not None) and args.phase == "enrichment":
+        parser.error("--mode and --cities can only be used when --phase is 'etl' or 'all'.")
 
     if args.phase in ("etl", "all"):
         from pipeline.orchestration.flow import main_etl_flow
         etl_mode = args.mode or "incremental"
         print("Running Phase 1: Main ETL Flow...")
-        main_etl_flow(mode=etl_mode)
+        main_etl_flow(cities=args.cities, mode=etl_mode)
 
     if args.phase in ("enrichment", "all"):
         from pipeline.orchestration.flow import llm_enrichment_flow
