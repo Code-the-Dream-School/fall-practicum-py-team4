@@ -113,7 +113,7 @@ def add_rolling_average(readings: list[Mapping[str, Any]], field: str, window: t
         time_span = when - first
         complete = time_span >= window
         # returning 0 during warm-up period, as agreed with the team
-        average = total / (end - start + 1) if complete else 0
+        average = round(total / (end - start + 1), 2) if complete else 0
 
         result.append({**reading, f"{field}_rolling_7d": average})
 

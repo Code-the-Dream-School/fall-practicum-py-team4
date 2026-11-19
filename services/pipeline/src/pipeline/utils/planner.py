@@ -1,6 +1,5 @@
 from datetime import datetime, timedelta, timezone
-import os
-import logging
+import os, re, logging
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
@@ -108,7 +107,9 @@ class AirPollutionPlanner:
       )
       if response.data:
         dt_str = response.data[0].get("created_at")
-        return datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+        if dt_str:
+          dt_str = re.sub(r"\.(\d+)", lambda m: f".{m.group(1).ljust(6, '0')[:6]}", dt_str)
+          return datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
     except Exception as e:
       logger.warning(f"Warning: Could not fetch last run time from pipeline_runs: {e}.")
     return None

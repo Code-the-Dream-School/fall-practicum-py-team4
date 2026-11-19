@@ -1,5 +1,5 @@
 import time
-from typing import Any
+from typing import Any, Literal
 from prefect import flow, get_run_logger
 from pipeline.utils.track_runs import log_flow_success, log_flow_failure
 from pipeline.orchestration.tasks import (
@@ -23,7 +23,7 @@ from pipeline.orchestration.tasks import (
 @flow(name="City Air Tracker ETL", log_prints=True, on_completion=[log_flow_success], on_failure=[log_flow_failure])
 def main_etl_flow(
     cities: list[str] | None = None,
-    mode: str = "incremental",
+    mode: Literal["backfill", "incremental"] = "incremental",
     ):
     """Main orchestration flow handling multiple cities."""
 
@@ -74,7 +74,7 @@ def main_etl_flow(
         logger.info(f"[STAGE SUCCESS: {current_stage}] No missing data found. Pipeline up to date.")
         result_summary["status"] = "NO_OP"
         logger.info(f"[RUN SUCCESS] Completed with result_summary: {result_summary}")
-        return result_summary
+        return 0
 
     logger.info(f"[STAGE SUCCESS: {current_stage}] Execution plan generated for {len(execution_plan)} target items.")
 
@@ -189,8 +189,9 @@ def main_etl_flow(
         )
 
     result_summary["status"] = "SUCCESS"
+    total_records_added = result_summary["counts"]["load_gold_air_records"]
     logger.info(f"[PHASE 1 SUCCESS] ETL execution completed! Summary: {result_summary}")
-    return result_summary
+    return total_records_added
         
 
 #--- PHASE 2: LLM Enrichment Flow --

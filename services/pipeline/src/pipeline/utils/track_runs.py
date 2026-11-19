@@ -1,6 +1,6 @@
 import os
 import logging
-from datetime import timedelta
+from datetime import datetime, timezone
 from prefect.states import State
 from supabase import create_client, Client
 from dotenv import load_dotenv
@@ -88,11 +88,14 @@ def _log_run_result(run_obj, state: State, is_success: bool = True, static_name:
         if not error_msg:
             error_msg = str(result_val) if result_val else "Unknown failure"
 
-    run_time_seconds = (
-        run_obj.total_run_time.total_seconds() 
-        if getattr(run_obj, "total_run_time", None) 
-        else 0.0
-    )
+    total_run_time = getattr(run_obj, "total_run_time", None)
+    if total_run_time and total_run_time.total_seconds() > 0:
+        run_time_seconds = round(total_run_time.total_seconds(), 2)
+    elif getattr(run_obj, "start_time", None):
+        end_time = getattr(state, "timestamp", None) or datetime.now(timezone.utc)
+        run_time_seconds = round(max(0.0, (end_time - run_obj.start_time).total_seconds()), 2)
+    else:
+        run_time_seconds = 0.0
 
     start_time_iso = (
         run_obj.start_time.isoformat() 
