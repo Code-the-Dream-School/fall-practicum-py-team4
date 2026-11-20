@@ -3,6 +3,7 @@ import logging
 import os
 import re
 from pathlib import Path
+import time
 
 from .openrouter_client import generate_summary
 
@@ -195,7 +196,7 @@ def fetch_records(supabase, last_id):
                 'id,aqi,sentiment_label,co,pm2_5,'
                 'aqi_rolling_7d,pm2_5_rolling_7d'
             )
-            .is_('llm_response', 'null')
+            .or_('llm_response.is.null,llm_response.eq.')
             .order('id')
             .limit(QUERY_SIZE)
         )
@@ -242,13 +243,39 @@ def run_enrichment(supabase):
 
             last_id = rows[-1]['id']
 
-            for start in range(0, len(rows), BATCH_SIZE):
+            total_batches = (len(rows) + BATCH_SIZE - 1) // BATCH_SIZE
+
+            for batch_idx, start in enumerate(
+                range(0, len(rows), BATCH_SIZE),
+                start=1
+            ):
                 batch = rows[start:start + BATCH_SIZE]
 
+                print(
+                    f"Batch {batch_idx}/{total_batches}: "
+                    f"calling OpenRouter ({len(batch)} rows)..."
+                )
+
+                t0 = time.monotonic()
                 responses = enrich_batch(batch)
+
+                print(
+                    f"Batch {batch_idx}/{total_batches}: "
+                    f"OpenRouter responded in "
+                    f"{time.monotonic() - t0:.1f}s. "
+                    f"Saving to Supabase..."
+                )
+
+                t1 = time.monotonic()
                 update_batch(supabase, responses)
 
                 success += len(responses)
+
+                print(
+                    f"Batch {batch_idx}/{total_batches}: "
+                    f"saved in {time.monotonic() - t1:.1f}s "
+                    f"(total saved: {success})."
+                )
 
     except Exception:
         logging.exception(
