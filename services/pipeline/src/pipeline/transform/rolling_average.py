@@ -21,7 +21,7 @@ def fetch_historical_readings(
     city_id: int,
     current_readings: list[Mapping[str, Any]],
     city_name: str,
-    table_name: str = "gold_cities",
+    table_name: str = "gold_air_data",
 ) -> list[dict[str, Any]]:
     """
     Queries Supabase for the previous 6 days of readings for a specific city,
@@ -35,7 +35,7 @@ def fetch_historical_readings(
     batch_start = min(timestamps)
     
     # Define lookback window (6 days prior to the current batch start)
-    history_start = batch_start - (ROLLING_WINDOW - timedelta(days=1))
+    history_start = batch_start - ROLLING_WINDOW
 
     try:
         response = (
@@ -110,7 +110,8 @@ def add_rolling_average(readings: list[Mapping[str, Any]], field: str, window: t
         while rows[start][0] <= when - window:
             total -= rows[start][1]
             start += 1
-        complete = first <= when - window
+        time_span = when - first
+        complete = time_span >= window
         # returning 0 during warm-up period, as agreed with the team
         average = total / (end - start + 1) if complete else 0
 
