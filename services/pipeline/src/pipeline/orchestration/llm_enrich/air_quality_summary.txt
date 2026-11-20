@@ -1,0 +1,31 @@
+Generate an air quality summary for each record provided.
+
+Rules:
+- Each record contains a unique position assigned by Python.
+- Preserve the exact position for every record.
+- Generate one summary per input record.
+- Each summary must contain 1 to 3 sentences.
+- Each summary must be no longer than 500 characters.
+- Use only the provided measurements.
+- Do not invent missing measurements.
+- Return valid JSON only.
+- Do not include Markdown or code fences.
+- Return exactly one result for every input record.
+- Do not omit, duplicate, or invent positions.
+
+Use the following structure:
+
+{
+  "results": [
+    {
+      "position": 0,
+      "llm_response": "Air quality is fair."
+    },
+    {
+      "position": 1,
+      "llm_response": "Air quality is poor."
+    }
+  ]
+}
+
+Each position must remain associated with its original record.
