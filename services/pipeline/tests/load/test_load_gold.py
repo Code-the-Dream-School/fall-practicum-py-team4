@@ -40,7 +40,7 @@ SAMPLE_GOLD_AIR = [
         "city_id": 1,
         "aqi_rolling_7d": 0.0,
         "pm2_5_rolling_7d": 0.0,
-        "llm_response": ""
+        "llm_response": None
     },
     {
         "date_time": "2025-05-01T01:00:00+00:00",
@@ -53,7 +53,7 @@ SAMPLE_GOLD_AIR = [
         "city_id": 1,
         "aqi_rolling_7d": 0.0,
         "pm2_5_rolling_7d": 0.0,
-        "llm_response": ""
+        "llm_response": None
     },
     {
         "date_time": "2025-05-01T02:00:00+00:00",
@@ -66,7 +66,7 @@ SAMPLE_GOLD_AIR = [
         "city_id": 1,
         "aqi_rolling_7d": 0.0,
         "pm2_5_rolling_7d": 0.0,
-        "llm_response": ""
+        "llm_response": None
     }
 ]
 
@@ -173,7 +173,7 @@ def test_empty_load_gold_cities(real_supabase_client):
 def test_load_gold_air_data(real_supabase_client, gold_air):
     """Test load of cleaned air data"""
     response = load_gold_air_data(real_supabase_client, gold_air)
-    assert response == 1
+    assert response == len(SAMPLE_GOLD_AIR)
 
 
 @pytest.mark.integration
@@ -181,7 +181,7 @@ def test_load_gold_air_data_idempotency(real_supabase_client, gold_air):
     """Test idempotency of load_gold_air_data"""
     load_gold_air_data(real_supabase_client, gold_air)
     response = load_gold_air_data(real_supabase_client, gold_air)
-    assert response == 1
+    assert response == len(SAMPLE_GOLD_AIR)
 
 
 @pytest.mark.integration
