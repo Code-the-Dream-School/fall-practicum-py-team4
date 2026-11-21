@@ -52,8 +52,16 @@ def load_gold_cities(supabase_client: Client, data: dict) -> int:
             data,
             on_conflict="city"
         ).execute()
+        
+        if not response or not response.data:
+            LOG.error("Failed to upload gold city data. Supabase response empty.")
+            raise IndexError("Supabase response empty")
+        
+        row = response.data[0]
+        if not isinstance(row, dict):
+            raise TypeError("Expected Supabase to return a row object.")
 
-        LOG.info("Successfully loaded gold data info for %s", response.data[0].get('city'))
+        LOG.info("Successfully loaded gold data info for %s", row.get("city"))
         return 1
     
     # raises an error if the record failed to insert/upsert to the DB
@@ -99,6 +107,10 @@ def load_gold_air_data(supabase_client: Client, data: list) -> int:
             [serialize_record(i) for i in data],
             on_conflict="city_id, date_time"
         ).execute()
+
+        if not response or not response.data:
+            LOG.error("Failed to upload gold air data. Supabase response empty.")
+            raise IndexError("Supabase response empty")
 
         LOG.info("Successfully loaded %s record(s) of gold air data", len(response.data))
         return len(response.data)
