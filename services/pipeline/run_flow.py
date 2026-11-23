@@ -34,17 +34,26 @@ if __name__ == "__main__":
         default=None,
         help="Optional list of cities to process (only used when --phase is 'etl' or 'all'). Defaults to config/cities.txt."
     )
+    parser.add_argument(
+        "--max-dates",
+        type=int,
+        default=None,
+        help="Max number of dates to process (only used when --phase is 'etl' or 'all'). Defaults to None"
+    )
     
     args = parser.parse_args()
 
-    if (args.mode is not None or args.cities is not None) and args.phase == "enrichment":
-        parser.error("--mode and --cities can only be used when --phase is 'etl' or 'all'.")
+    if (args.mode is not None or args.cities is not None or args.max_dates is not None) and args.phase == "enrichment":
+        parser.error("--mode --cities and --max-dates can only be used when --phase is 'etl' or 'all'.")
+    if args.max_dates is not None and args.max_dates <= 0:
+        parser.error("--max-dates can only be a positive integer.")
 
     if args.phase in ("etl", "all"):
         from pipeline.orchestration.flow import main_etl_flow
         etl_mode = args.mode or "incremental"
+        max_dates = args.max_dates
         print("Running Phase 1: Main ETL Flow...")
-        main_etl_flow(cities=args.cities, mode=etl_mode)
+        main_etl_flow(cities=args.cities, mode=etl_mode, max_dates_per_city=max_dates)
 
     if args.phase in ("enrichment", "all"):
         from pipeline.orchestration.flow import llm_enrichment_flow

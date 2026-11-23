@@ -35,8 +35,12 @@ def load_cities(filepath: Path = CITIES_FILE) -> list[str]:
 def main_etl_flow(
     cities: list[str] | None = None,
     mode: Literal["backfill", "incremental"] = "incremental",
+    max_dates_per_city: int | None = None
     ):
     """Main orchestration flow handling multiple cities."""
+
+    if max_dates_per_city is not None and max_dates_per_city <= 0:
+        raise ValueError(f"max_dates_per_city must be a positive integer, got {max_dates_per_city}")
 
     if cities is None:
         cities = load_cities()
@@ -47,6 +51,7 @@ def main_etl_flow(
     result_summary: dict[str, Any] = {
         "status": "RUNNING",
         "mode": mode,
+        "max_dates_per_city": max_dates_per_city,
         "cities": cities,
         "counts": {
             "extract_geocoding": 0,
@@ -66,14 +71,14 @@ def main_etl_flow(
         "failed_cities": [],
     }
 
-    logger.info(f"[RUN START] Starting ETL Pipeline for {len(cities)} cities, mode: {mode}")
+    logger.info(f"[RUN START] Starting ETL Pipeline for {len(cities)} cities, mode: {mode} and {max_dates_per_city} dates per city")
 
     # --- STAGE 0: PLANNING ---
     current_stage = "PLANNING"
 
     try:
         logger.info(f"[STAGE START: {current_stage}] Defining Execution plan")
-        execution_plan = generate_execution_plan(cities, mode)
+        execution_plan = generate_execution_plan(cities, mode, max_dates_per_city)
     except Exception as e:
         result_summary["status"] = "FAILED"
         result_summary["failed_stage"] = current_stage
@@ -154,10 +159,12 @@ def main_etl_flow(
                 air_count, formatted_gold = transform_air(pollution_data, city_id)
                 result_summary["counts"]["transform_air_records"] += air_count
 
-                logger.info(f"FETCH_HISTORICAL_AIR_DATA ({city_name} @ {target_date})")
+                current_stage = f"FETCH_HISTORICAL_AIR_DATA ({city_name})"
+                logger.info(f"[STAGE START: {current_stage}] ({city_name})")
                 historical_data = fetch_historical(city_id, formatted_gold, city_name)
 
-                logger.info(f"CALCULATE_ROLLING_AVERAGES ({city_name} @ {target_date})")
+                current_stage = f"CALCULATE_ROLLING_AVERAGES ({city_name} @ {target_date})"
+                logger.info(f"[STAGE START: {current_stage}] ({city_name} @ {target_date})")
                 rolling_count, rolling_7d_added = calculate_rolling_averages(historical_data, ['aqi', 'pm2_5'], formatted_gold, city_name)
                 result_summary["counts"]["transform_rolling_records"] += rolling_count
 

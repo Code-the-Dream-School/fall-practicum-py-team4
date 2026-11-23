@@ -1,6 +1,7 @@
 from prefect import task
-from typing import Any, Mapping
-import time
+from prefect.client.schemas.objects import State, TaskRun
+from typing import Any
+import time, httpx, requests
 
 from pipeline.utils.planner import AirPollutionPlanner
 from pipeline.utils.track_runs import log_task_success, log_task_failure, get_supabase_client
@@ -13,22 +14,51 @@ from pipeline.transform.rolling_average import get_timestamp, fetch_historical_r
 from pipeline.load.load_gold import load_gold_cities, load_gold_air_data
 from pipeline.llm_enrich.enrich import run_enrichment
 
-# Execution Plan
+
+# Retry helper function
+def is_transient_error(_task, _task_run: TaskRun, state: State) -> bool:
+    """Retry only on network errors, timeouts, or 5xx server responses."""
+    exc = state.result(raise_on_failure=False)
+
+    # 1. Network / timeout errors
+    transient_types = (
+        TimeoutError,
+        ConnectionError,
+        requests.exceptions.Timeout,
+        requests.exceptions.ConnectionError,
+        httpx.TimeoutException,
+        httpx.ConnectError,
+    )
+    if isinstance(exc, transient_types):
+        return True
+
+    # 2. HTTP 5xx server errors (requests)
+    if isinstance(exc, requests.exceptions.HTTPError):
+        return exc.response is not None and exc.response.status_code >= 500
+
+    # 3. HTTP 5xx server errors (httpx / Supabase)
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code >= 500
+
+    return False
+
+
 @task(retries=0,
     name="Generate Execution Plan",
     on_completion=[log_task_success],
     on_failure=[log_task_failure]
 )
-def generate_execution_plan(cities: list[str], mode: str | None) -> list[dict]:
+def generate_execution_plan(cities: list[str], mode: str | None, max_dates_per_city: int | None = None) -> list[dict]:
     """Inspects Supabase to build an execution plan of missing dates per city."""
     planner = AirPollutionPlanner(cities=cities, mode=mode)
-    plan = planner.create_execution_plan()
+    plan = planner.create_execution_plan(max_dates_per_city=max_dates_per_city)
     return plan
 
 # Geocoding Cache
 @task(
     retries=3,
     retry_delay_seconds=10,
+    retry_condition_fn=is_transient_error,
     name="Check Cache for Geocoding Data",
     on_completion=[log_task_success],
     on_failure=[log_task_failure]
@@ -43,6 +73,7 @@ def check_geocoding_cache(city: str) -> dict:
 @task(
     retries=3,
     retry_delay_seconds=10,
+    retry_condition_fn=is_transient_error,
     name="Extract Geocoding Data",
     on_completion=[log_task_success],
     on_failure=[log_task_failure]
@@ -57,6 +88,7 @@ def fetch_geocoding(city: str) -> dict:
 @task(
     retries=3,
     retry_delay_seconds=10,
+    retry_condition_fn=is_transient_error,
     name="Extract Air Pollution Data",
     on_completion=[log_task_success],
     on_failure=[log_task_failure]
@@ -71,6 +103,7 @@ def fetch_air_pollution(city: str, lat: float, lon: float, date: str) -> dict:
 @task(
     retries=3,
     retry_delay_seconds=10,
+    retry_condition_fn=is_transient_error,
     name="Load Raw Cities",
     on_completion=[log_task_success],
     on_failure=[log_task_failure]
@@ -85,6 +118,7 @@ def load_raw_cities_task(data) -> int:
 @task(
     retries=3,
     retry_delay_seconds=10,
+    retry_condition_fn=is_transient_error,
     name="Load Raw Air Pollution",
     on_completion=[log_task_success],
     on_failure=[log_task_failure]
@@ -114,6 +148,7 @@ def transform_air(data, city_id) -> tuple:
 @task(
     retries=3,
     retry_delay_seconds=10,
+    retry_condition_fn=is_transient_error,
     name="Fetch Historical Readings",
     on_completion=[log_task_success],
     on_failure=[log_task_failure]
@@ -140,6 +175,8 @@ def calculate_rolling_averages(
     """Calculates 7-day rolling averages for multiple fields (e.g., AQI, PM2.5)
     in a single pass, filters output."""
     enriched_readings = full_dataset
+    if not current_batch:
+        return (0, [])
     for field in fields:
         enriched_readings = add_rolling_average(enriched_readings, field=field)
 
@@ -153,6 +190,7 @@ def calculate_rolling_averages(
 @task(
     retries=3,
     retry_delay_seconds=10,
+    retry_condition_fn=is_transient_error,
     name="Load Gold Cities",
     on_completion=[log_task_success],
     on_failure=[log_task_failure]
@@ -167,6 +205,7 @@ def load_gold_cities_task(data) -> int:
 @task(
     retries=3,
     retry_delay_seconds=10,
+    retry_condition_fn=is_transient_error,
     name="Load Gold Air Pollution Data",
     on_completion=[log_task_success],
     on_failure=[log_task_failure]
@@ -180,6 +219,7 @@ def load_gold_air_data_task(data) -> dict:
 @task(
     retries=2,
     retry_delay_seconds=10,
+    retry_condition_fn=is_transient_error,
     name="LLM Enrichment",
     on_completion=[log_task_success],
     on_failure=[log_task_failure]
