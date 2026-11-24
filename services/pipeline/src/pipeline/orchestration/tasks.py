@@ -2,6 +2,8 @@ from prefect import task
 from prefect.client.schemas.objects import State, TaskRun
 from typing import Any
 import time, httpx, requests
+from postgrest.exceptions import APIError
+from pipeline.llm_enrich.openrouter_client import OpenRouterRateLimited
 
 from pipeline.utils.planner import AirPollutionPlanner
 from pipeline.utils.track_runs import log_task_success, log_task_failure, get_supabase_client
@@ -17,10 +19,9 @@ from pipeline.llm_enrich.enrich import run_enrichment
 
 # Retry helper function
 def is_transient_error(_task, _task_run: TaskRun, state: State) -> bool:
-    """Retry only on network errors, timeouts, or 5xx server responses."""
+    """Retry only on transient network errors, timeouts, 5xx responses, or rate limits."""
     exc = state.result(raise_on_failure=False)
 
-    # 1. Network / timeout errors
     transient_types = (
         TimeoutError,
         ConnectionError,
@@ -28,22 +29,43 @@ def is_transient_error(_task, _task_run: TaskRun, state: State) -> bool:
         requests.exceptions.ConnectionError,
         httpx.TimeoutException,
         httpx.ConnectError,
+        OpenRouterRateLimited,
     )
-    if isinstance(exc, transient_types):
-        return True
 
-    # 2. HTTP 5xx server errors (requests)
-    if isinstance(exc, requests.exceptions.HTTPError):
-        return exc.response is not None and exc.response.status_code >= 500
+    seen = set()
+    while isinstance(exc, BaseException) and id(exc) not in seen:
+        seen.add(id(exc))
 
-    # 3. HTTP 5xx server errors (httpx / Supabase)
-    if isinstance(exc, httpx.HTTPStatusError):
-        return exc.response.status_code >= 500
+        # 1. Network, timeout, and rate-limit errors
+        if isinstance(exc, transient_types):
+            return True
+
+        # 2. HTTP 5xx / 429 errors (requests)
+        if isinstance(exc, requests.exceptions.HTTPError):
+            if exc.response is not None and (
+                exc.response.status_code >= 500 or exc.response.status_code == 429
+            ):
+                return True
+
+        # 3. HTTP 5xx / 429 errors (httpx)
+        if isinstance(exc, httpx.HTTPStatusError):
+            if exc.response.status_code >= 500 or exc.response.status_code == 429:
+                return True
+
+        # 4. HTTP 5xx / 429 errors (Supabase / PostgREST)
+        if isinstance(exc, APIError):
+            code = str(getattr(exc, "code", "") or "")
+            if code.isdigit() and (500 <= int(code) < 600 or int(code) == 429):
+                return True
+
+        exc = exc.__cause__ or exc.__context__
 
     return False
 
 
-@task(retries=0,
+@task(retries=3,
+    retry_delay_seconds=10,
+    retry_condition_fn=is_transient_error,
     name="Generate Execution Plan",
     on_completion=[log_task_success],
     on_failure=[log_task_failure]
@@ -56,9 +78,6 @@ def generate_execution_plan(cities: list[str], mode: str | None, max_dates_per_c
 
 # Geocoding Cache
 @task(
-    retries=3,
-    retry_delay_seconds=10,
-    retry_condition_fn=is_transient_error,
     name="Check Cache for Geocoding Data",
     on_completion=[log_task_success],
     on_failure=[log_task_failure]
@@ -170,7 +189,8 @@ def calculate_rolling_averages(
     full_dataset: list[dict[str, Any]], 
     fields: list[str], 
     current_batch: list[dict[str, Any]],
-    city_name: str
+    city_name: str,
+    min_readings: int = 144
 ) -> tuple[int, list[dict[str, Any]]]:
     """Calculates 7-day rolling averages for multiple fields (e.g., AQI, PM2.5)
     in a single pass, filters output."""
@@ -178,7 +198,11 @@ def calculate_rolling_averages(
     if not current_batch:
         return (0, [])
     for field in fields:
-        enriched_readings = add_rolling_average(enriched_readings, field=field)
+        enriched_readings = add_rolling_average(
+            enriched_readings,
+            field=field,
+            min_readings=min_readings,
+        )
 
     # Discard historical readings
     batch_start = min(get_timestamp(r, i) for i, r in enumerate(current_batch))
@@ -218,7 +242,7 @@ def load_gold_air_data_task(data) -> dict:
 # Enrich LLM
 @task(
     retries=2,
-    retry_delay_seconds=10,
+    retry_delay_seconds=[15, 60],
     retry_condition_fn=is_transient_error,
     name="LLM Enrichment",
     on_completion=[log_task_success],

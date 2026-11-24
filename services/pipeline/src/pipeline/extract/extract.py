@@ -69,7 +69,10 @@ def extract(city_name: str, latitude: float, longitude: float, date: str) -> dic
         raise RuntimeError("Could not reach OpenWeather. Check your internet connection.") from None
     if response.status_code != 200:
         logger.error("OpenWeather returned error status code: HTTP %s", response.status_code)
-        raise RuntimeError(f"OpenWeather returned an error: HTTP {response.status_code}")
+        raise requests.exceptions.HTTPError(
+            f"OpenWeather returned an error: HTTP {response.status_code}",
+            response=response,
+        )
 
     # Validates the raw response using the pydantic model
     try:

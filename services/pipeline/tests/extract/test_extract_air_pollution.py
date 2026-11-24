@@ -6,6 +6,8 @@ import requests
 
 import pipeline.extract.extract as air
 
+pytestmark = pytest.mark.unit
+
 FAKE_KEY = "fake-key-123"
 
 PAYLOAD = {
@@ -107,9 +109,12 @@ def test_empty_measurements(mock_get):
 def test_http_error(mock_get, status):
     mock_get.return_value.status_code = status
 
-    with pytest.raises(RuntimeError, match=f"HTTP {status}"):
+    with pytest.raises(requests.exceptions.HTTPError, match=f"HTTP {status}") as exc_info:
         air.extract("New York", 40.7128, -74.006, "2025-01-01")
 
+    assert exc_info.value.response is mock_get.return_value
+    assert exc_info.value.response.status_code == status
+    assert FAKE_KEY not in str(exc_info.value)
     mock_get.return_value.json.assert_not_called()
 
 
@@ -117,10 +122,13 @@ def test_http_error(mock_get, status):
     "error_type", [requests.ConnectionError, requests.Timeout]
 )
 def test_connection_failure(mock_get, error_type):
-    mock_get.side_effect = error_type("test failure")
+    mock_get.side_effect = error_type(f"https://example.com?appid={FAKE_KEY}")
 
-    with pytest.raises(RuntimeError, match="Could not reach OpenWeather"):
+    with pytest.raises(RuntimeError, match="Could not reach OpenWeather") as exc_info:
         air.extract("New York", 40.7128, -74.006, "2025-01-01")
+
+    assert isinstance(exc_info.value.__context__, error_type)
+    assert FAKE_KEY not in str(exc_info.value)
 
 
 def test_invalid_json(mock_get):
