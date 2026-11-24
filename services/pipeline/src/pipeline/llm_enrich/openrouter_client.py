@@ -1,4 +1,3 @@
-
 import os
 import requests
 
@@ -51,4 +50,9 @@ def generate_summary(prompt):
 
     response.raise_for_status()
 
-    return response.json()['choices'][0]['message']['content']
+    data = response.json()
+
+    return (
+        data['choices'][0]['message']['content'],
+        data['model']
+    )

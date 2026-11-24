@@ -96,7 +96,7 @@ def enrich_batch(batch):
     expected_positions = set(range(len(batch)))
 
     try:
-        response = generate_summary(prompt)
+        response, llm_model = generate_summary(prompt)
         response_data = parse_response(response)
 
         items = response_data.get('results')
@@ -142,7 +142,7 @@ def enrich_batch(batch):
         if set(summaries) != expected_positions:
             raise ValueError('Missing expected positions')
 
-        return [
+        responses = [
             {
                 'id': row['id'],
                 'llm_response': summaries[position]
@@ -150,12 +150,13 @@ def enrich_batch(batch):
             for position, row in enumerate(batch)
         ]
 
+        return responses, llm_model
+
     except (ValueError, KeyError) as exc:
         logging.exception('LLM batch validation failed')
         raise EnrichmentBatchError(
             f'LLM batch validation failed: {exc}'
         ) from exc
-
 
 def update_batch(supabase, responses):
     if not responses:
@@ -218,14 +219,14 @@ def fetch_records(supabase, last_id):
         ) from exc
 
 
-def run_enrichment(supabase):
-    llm_model = os.environ.get('OPENROUTER_MODEL')
-
+def run_enrichment(supabase, max_batches=None):
     success = 0
     last_id = None
+    batches_processed = 0
+    models_used = set()
 
     try:
-        if not llm_model:
+        if not os.environ.get('OPENROUTER_MODEL'):
             raise EnrichmentConfigurationError(
                 'OPENROUTER_MODEL is not configured'
             )
@@ -235,7 +236,14 @@ def run_enrichment(supabase):
                 'OPENROUTER_API_KEY is not configured'
             )
 
-        while True:
+        if max_batches is not None and (
+            type(max_batches) is not int or max_batches < 1
+        ):
+            raise ValueError(
+                'max_batches must be a positive integer or None'
+            )
+
+        while max_batches is None or batches_processed < max_batches:
             rows = fetch_records(supabase, last_id)
 
             if not rows:
@@ -245,10 +253,22 @@ def run_enrichment(supabase):
 
             total_batches = (len(rows) + BATCH_SIZE - 1) // BATCH_SIZE
 
+            if max_batches is not None:
+                total_batches = min(
+                    total_batches,
+                    max_batches - batches_processed
+                )
+
             for batch_idx, start in enumerate(
                 range(0, len(rows), BATCH_SIZE),
                 start=1
             ):
+                if (
+                    max_batches is not None
+                    and batches_processed >= max_batches
+                ):
+                    break
+
                 batch = rows[start:start + BATCH_SIZE]
 
                 print(
@@ -257,7 +277,7 @@ def run_enrichment(supabase):
                 )
 
                 t0 = time.monotonic()
-                responses = enrich_batch(batch)
+                responses, llm_model = enrich_batch(batch)
 
                 print(
                     f"Batch {batch_idx}/{total_batches}: "
@@ -270,6 +290,8 @@ def run_enrichment(supabase):
                 update_batch(supabase, responses)
 
                 success += len(responses)
+                batches_processed += 1
+                models_used.add(llm_model)
 
                 print(
                     f"Batch {batch_idx}/{total_batches}: "
@@ -277,15 +299,22 @@ def run_enrichment(supabase):
                     f"(total saved: {success})."
                 )
 
-    except Exception:
+    except Exception as e:
         logging.exception(
             'Enrichment failed after %s successfully saved records',
             success
         )
+
+        e.partial_result = {
+            'success': success,
+            'llm_model': ', '.join(sorted(models_used)) or None,
+            'prompt_version': PROMPT_VERSION
+        }
+
         raise
 
     return {
         'success': success,
-        'llm_model': llm_model,
+        'llm_model': ', '.join(sorted(models_used)) or None,
         'prompt_version': PROMPT_VERSION
     }

@@ -1,4 +1,30 @@
-Generate an air quality summary for each record provided.
+Generate an informative and concise air quality summary for each record provided.
+
+Your purpose is to help users understand current air quality conditions and how they compare with recent conditions, rather than simply restating the measurements displayed on the dashboard.
+
+Available measurements:
+- aqi: Current air quality index on a scale of 1 to 5, where higher values indicate worse air quality.
+- sentiment_label: Current air quality classification.
+- co: Carbon monoxide concentration in µg/m³.
+- pm2_5: Fine particulate matter concentration in µg/m³.
+- aqi_rolling_7d: Seven-day rolling average of AQI.
+- pm2_5_rolling_7d: Seven-day rolling average of fine particulate matter concentration.
+
+Summary guidelines:
+- Describe current air quality conditions.
+- Compare current AQI with its seven-day rolling average when available.
+- Compare current PM2.5 concentration with its seven-day rolling average when available.
+- Highlight meaningful differences between current and recent conditions.
+- Identify when AQI and PM2.5 comparisons indicate different conditions.
+- When measurements are similar to their recent averages, describe conditions as relatively stable compared with those averages.
+- Prioritize meaningful observations rather than listing every measurement.
+- Use accessible, natural, and professional language suitable for a public dashboard.
+- Avoid unnecessary repetition and overly technical terminology.
+- Do not infer pollution sources, causes, future conditions, or health outcomes.
+- Do not describe differences as statistically significant.
+- Do not infer an increasing or decreasing trend from a single observation and a rolling average.
+- Do not classify individual pollutant concentrations as safe, dangerous, or elevated in absolute terms without provided reference thresholds.
+- Use only the provided measurements and omit comparisons when the required measurements are missing.
 
 Rules:
 - Each record contains a unique position assigned by Python.
@@ -6,7 +32,7 @@ Rules:
 - Generate one summary per input record.
 - Each summary must contain 1 to 3 sentences.
 - Each summary must be no longer than 500 characters.
-- Use only the provided measurements.
+- Evaluate each record independently.
 - Do not invent missing measurements.
 - Return valid JSON only.
 - Do not include Markdown or code fences.
@@ -19,11 +45,11 @@ Use the following structure:
   "results": [
     {
       "position": 0,
-      "llm_response": "Air quality is fair."
+      "llm_response": "Air quality is fair and better than its recent seven-day average. Fine particulate concentrations are also below their recent average."
     },
     {
       "position": 1,
-      "llm_response": "Air quality is poor."
+      "llm_response": "Air quality is poor and worse than recent conditions. Fine particulate concentrations are noticeably above their seven-day average."
     }
   ]
 }
