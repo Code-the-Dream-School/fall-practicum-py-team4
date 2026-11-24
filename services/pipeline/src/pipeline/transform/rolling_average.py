@@ -4,6 +4,7 @@ from typing import Any
 from supabase import Client
 
 ROLLING_WINDOW = timedelta(days=7)
+LOOKBACK_BUFFER = timedelta(hours=2)
 
 
 def get_timestamp(reading: Mapping[str, Any], index: int) -> datetime:
@@ -24,69 +25,66 @@ def fetch_historical_readings(
     table_name: str = "gold_air_data",
 ) -> list[dict[str, Any]]:
     """
-    Queries Supabase for the previous 6 days of readings for a specific city,
-    parses timestamps, and combines them with the incoming 24-hour batch.
+    Queries Supabase for readings within 7 days before and 7 days after the
+    incoming batch so both current and downstream rolling averages update cleanly.
     """
     if not current_readings:
         return []
 
-    # Determine the time window boundary from the current batch
     timestamps = [get_timestamp(r, i) for i, r in enumerate(current_readings)]
     batch_start = min(timestamps)
-    
-    # Define lookback window (6 days prior to the current batch start)
-    history_start = batch_start - ROLLING_WINDOW
+    batch_end = max(timestamps)
+    current_ts_set = set(timestamps)
+
+    window_start = batch_start - ROLLING_WINDOW - LOOKBACK_BUFFER
+    window_end = batch_end + ROLLING_WINDOW
 
     try:
         response = (
             supabase_client.table(table_name)
             .select("*")
             .eq("city_id", city_id)
-            .gte("date_time", history_start.isoformat())
-            .lt("date_time", batch_start.isoformat())
+            .gte("date_time", window_start.isoformat())
+            .lte("date_time", window_end.isoformat())
             .order("date_time", desc=False)
             .execute()
         )
     except Exception as e:
         raise RuntimeError(f"Failed to fetch historical readings for {city_name}: {e}") from e
-    
+
     historical_rows = response.data or []
 
-    # Parse database string timestamps back into timezone-aware datetime objects
+    # Parse database timestamps and exclude rows being replaced by current_readings
+    base_keys = set(current_readings[0].keys())
+
     parsed_history = []
     for row in historical_rows:
         dt_val = row.get("date_time")
         if isinstance(dt_val, str):
-            row["date_time"] = datetime.fromisoformat(dt_val.replace("Z", "+00:00"))
-        parsed_history.append(row)
+            dt_val = datetime.fromisoformat(dt_val.replace("Z", "+00:00"))
+            row["date_time"] = dt_val
+        if dt_val not in current_ts_set:
+            parsed_history.append({k: row.get(k) for k in base_keys})
 
-    # Combine historical records with the current 24-hour batch
-    combined_readings = parsed_history + [dict(r) for r in current_readings]
-
-    return combined_readings
+    return parsed_history + [dict(r) for r in current_readings]
 
 
-def add_rolling_average(readings: list[Mapping[str, Any]], field: str, window: timedelta = ROLLING_WINDOW) -> list[dict[str, Any]]:
+def add_rolling_average(
+    readings: list[Mapping[str, Any]],
+    field: str,
+    window: timedelta = ROLLING_WINDOW,
+    boundary_tolerance: timedelta = timedelta(hours=1),
+    min_readings: int = 1,
+) -> list[dict[str, Any]]:
     """
     Calculates a 7-day rolling average for a specified field in each reading.
-    
-    This takes a list of readings, sorts them chronologically, and adds 
-    an '{field}_rolling_7d' key to every record.
-
-    A time-based window, handles irregular data, missing hourly pings, or API gaps
-    gracefully without breaking the math.
-    
-    Key details:
-    - Uses a time-based window (7 days), so it handles hourly or daily data seamlessly.
-    - Returns 0 during the initial warm-up period (until the city has a full 7 days of history)
-    to avoid showing misleading, partial averages.
+    Returns 0 until the active window spans at least (window - boundary_tolerance)
+    and contains at least min_readings points.
     """
-
     if not isinstance(readings, list):
         raise ValueError("readings must be a list")
-    
-    rows = []
 
+    rows = []
     for index, reading in enumerate(readings):
         when = get_timestamp(reading, index)
         raw_val = reading.get(field)
@@ -103,6 +101,7 @@ def add_rolling_average(readings: list[Mapping[str, Any]], field: str, window: t
     result = []
     start = 0
     total = 0.0
+    required_span = max(timedelta(0), window - boundary_tolerance)
     first = rows[0][0] if rows else None
 
     for end, (when, val, reading) in enumerate(rows):
@@ -110,10 +109,11 @@ def add_rolling_average(readings: list[Mapping[str, Any]], field: str, window: t
         while rows[start][0] <= when - window:
             total -= rows[start][1]
             start += 1
+
+        window_count = end - start + 1
         time_span = when - first
-        complete = time_span >= window
-        # returning 0 during warm-up period, as agreed with the team
-        average = round(total / (end - start + 1), 2) if complete else 0
+        complete = time_span >= required_span and window_count >= min_readings
+        average = round(total / window_count, 2) if complete else 0
 
         result.append({**reading, f"{field}_rolling_7d": average})
 
