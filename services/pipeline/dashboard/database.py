@@ -5,8 +5,7 @@ import streamlit as st
 from dotenv import load_dotenv
 from supabase import create_client
 
-load_dotenv(Path(__file__).resolve().parents[3] / '.env')
-
+load_dotenv()
 PAGE_SIZE = 500
 FIELDS = ('id,city_id,date_time,aqi,sentiment_label,pm2_5,co,no2,'
           'aqi_rolling_7d,pm2_5_rolling_7d,llm_response,retrieve_date')
@@ -27,14 +26,30 @@ def fetch_air_data(client, city_id):
     records = []
     offset = 0
     while True:
-        page = (client.table('gold_air_data').select(FIELDS)
-                .eq('city_id', city_id).order('date_time', desc=True)
-                .order('id', desc=True).range(offset, offset + PAGE_SIZE - 1)
-                .execute().data)
-        records.extend(page)
-        if not page or len(page) < PAGE_SIZE:
+        page = (
+        client.table('gold_air_data')
+        .select(FIELDS)
+        .eq('city_id', city_id)
+        .order('date_time', desc=True)
+        .order('id', desc=True)
+        .range(offset, offset + PAGE_SIZE - 1)
+        .execute()
+        .data
+    )
+
+        if page is None:
+            raise ValueError('Supabase returned no data payload')
+
+        if not page:
             break
-        offset += len(page)
+
+        records.extend(page)
+
+        if len(page) < PAGE_SIZE:
+            break
+
+        offset += PAGE_SIZE
+
     return records
 
 

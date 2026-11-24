@@ -8,7 +8,14 @@ COLORS = {'Good': '#16834a', 'Fair': '#709b32', 'Moderate': '#b58900',
 
 
 def render_city_selector(cities):
-    labels = {c['id']: ', '.join(str(c[k]).title() for k in ('city', 'state', 'country') if c.get(k)) for c in cities}
+    labels = {
+        c['id']: ', '.join(
+            str(c[k]).title() if k == 'city' else str(c[k])
+            for k in ('city', 'state', 'country')
+            if c.get(k)
+        )
+        for c in cities
+    }   
     return st.selectbox('City', list(labels), format_func=labels.get)
 
 
@@ -32,7 +39,10 @@ def render_filters():
     metric = st.selectbox('Pollution metric', list(METRICS))
     days = st.selectbox('Time period', [7, 14, 30, 60], format_func=lambda n: f'Last {n} days')
     granularity = st.selectbox('Granularity', ['Hourly', 'Daily'], index=1)
-    rolling = st.checkbox('7-day rolling average', value=True) if days == 7 and METRICS[metric][2] else False
+    rolling = st.checkbox(
+        '7-day rolling average',
+        value=True
+    ) if METRICS[metric][2] else False
     return metric, days, granularity, rolling
 
 
