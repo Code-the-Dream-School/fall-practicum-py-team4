@@ -171,8 +171,8 @@ class AirPollutionPlanner:
             self.supabase.table("gold_air_data")
             .select("date_time")
             .eq("city_id", city_id)
-            .gte("date_time", f"{current_chunk_start.strftime('%Y-%m-%d')}T00:00:00")
-            .lte("date_time", f"{current_chunk_end.strftime('%Y-%m-%d')}T23:59:59")
+            .gte("date_time", f"{current_chunk_start.strftime('%Y-%m-%d')}T00:00:00+00:00")
+            .lte("date_time", f"{current_chunk_end.strftime('%Y-%m-%d')}T23:59:59+00:00")
             .execute()
         )
         
