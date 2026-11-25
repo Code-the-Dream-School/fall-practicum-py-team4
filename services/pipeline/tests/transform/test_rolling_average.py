@@ -159,7 +159,7 @@ def test_fetch_historical_readings_dedupes_and_strips_extra_columns():
     )
 
     assert len(result) == 2
-    assert set(result[0].keys()) == {"date_time", "city_id", "aqi"}
+    assert set(result[0].keys()) == {"date_time", "city_id", "aqi", "_prev_rolling"}
     assert result[0]["date_time"] == future_time
     assert result[1]["aqi"] == 15.0
 

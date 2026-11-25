@@ -31,7 +31,7 @@ class AirPollutionPlanner:
       self, 
       cities: list[str] = None, 
       mode: str = 'incremental', 
-      window_days: int = 60,  # Number of past days to inspect for missing data
+      window_days: int = 67,  # Number of past days to inspect for missing data
       chunk_size: int = 15,  # Define chunk size, has to be safe for Supabase limits (< 41 days or 1000 rows)
       supabase_client=None
   ):

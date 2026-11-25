@@ -44,7 +44,7 @@ def test_planner_backfill_mode_empty_database(mock_supabase_client):
   assert len(plan) == 1
   assert plan[0]["city_name"] == "bogota"
   assert plan[0]["city_id"] == "city-uuid-bogota-123"
-  assert len(plan[0]["missing_dates"]) == 60
+  assert len(plan[0]["missing_dates"]) == 67
   # Verify chronological oldest-first ordering for sequential rolling averages
   assert plan[0]["missing_dates"] == sorted(plan[0]["missing_dates"])
 

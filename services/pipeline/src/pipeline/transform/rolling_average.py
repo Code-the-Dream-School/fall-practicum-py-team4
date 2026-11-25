@@ -64,7 +64,11 @@ def fetch_historical_readings(
             dt_val = datetime.fromisoformat(dt_val.replace("Z", "+00:00"))
             row["date_time"] = dt_val
         if dt_val not in current_ts_set:
-            parsed_history.append({k: row.get(k) for k in base_keys})
+            projected = {k: row.get(k) for k in base_keys}
+            projected["_prev_rolling"] = {
+                k: row.get(k) for k in row if k.endswith("_rolling_7d")
+            }
+            parsed_history.append(projected)
 
     return parsed_history + [dict(r) for r in current_readings]
 
