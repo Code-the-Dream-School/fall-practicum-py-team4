@@ -1,0 +1,25 @@
+FROM python:3.11-slim
+
+# Prevent .pyc files and flush stdout/stderr immediately to CloudWatch Logs
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# Install system dependencies if needed (uncomment if using git or build tools)
+# RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.dashboard.txt .
+
+RUN pip install --no-cache-dir --upgrade pip
+RUN pip install --no-cache-dir -r requirements.dashboard.txt --prefer-binary
+
+COPY . .
+
+EXPOSE 8501
+
+# Built-in Streamlit health endpoint for ECS container health checks
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')" || exit 1
+
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true"]
