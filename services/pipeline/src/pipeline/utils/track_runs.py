@@ -1,4 +1,5 @@
 import os
+import sys
 import logging
 from datetime import datetime, timezone
 from prefect.states import State
@@ -41,10 +42,12 @@ def _extract_record_count(result_val) -> int:
     if isinstance(result_val, int):
         return result_val
         
-    # If the task returns a tuple, the first element being the count 
-    # (transform_city, transform_air, calculate_rolling_averages)
-    if isinstance(result_val, tuple) and len(result_val) > 0 and isinstance(result_val[0], int):
-        return result_val[0]
+    # If the task returns a tuple, the first element being the count (transform_city, transform_air, calculate_rolling_averages)
+    if isinstance(result_val, tuple) and len(result_val) > 0:
+        if isinstance(result_val[0], bool):
+            return 0
+        if isinstance(result_val[0], int):
+            return result_val[0]
         
     # If the task returns a list
     if isinstance(result_val, list):
@@ -74,6 +77,18 @@ def _extract_record_count(result_val) -> int:
         
     return 0
 
+def _extract_failure_records(error: str | None) -> int:
+    """Extracts partial record counts attached to an exception before it was raised."""
+    if error is None:
+        return 0
+
+    partial = getattr(error, "partial_result", None)
+    if partial is not None:
+        return _extract_record_count(partial)
+
+    records = getattr(error, "records_added", 0)
+    return records if isinstance(records, int) and not isinstance(records, bool) else 0
+
 
 def _log_run_result(run_obj, state: State, is_success: bool = True, static_name: str = None, run_type: str = None):
     """
@@ -89,7 +104,20 @@ def _log_run_result(run_obj, state: State, is_success: bool = True, static_name:
         LOG.warning("Could not retrieve state result for run %s: %s", getattr(run_obj, "id", "unknown"), e)
         result_val = None
 
-    records_count = _extract_record_count(result_val) if is_success else 0
+    failed_exc = None
+    if not is_success:
+        if isinstance(result_val, BaseException):
+            failed_exc = result_val
+        else:
+            _, active_exc, _ = sys.exc_info()
+            if isinstance(active_exc, BaseException):
+                failed_exc = active_exc
+
+    records_count = (
+        _extract_record_count(result_val)
+        if is_success
+        else _extract_failure_records(failed_exc)
+    )
 
     error_msg = ""
     if not is_success:
@@ -125,14 +153,16 @@ def _log_run_result(run_obj, state: State, is_success: bool = True, static_name:
         "message": error_msg,
     }
 
-    if is_success and isinstance(result_val, dict):
-        if "llm_model" in result_val:
-            payload["llm_model"] = result_val["llm_model"]
-        if "prompt_version" in result_val:
-            payload["prompt_version"] = result_val["prompt_version"]
+    meta_source = result_val if is_success else getattr(failed_exc, "partial_result", None)
+
+    if isinstance(meta_source, dict):
+        if "llm_model" in meta_source:
+            payload["llm_model"] = meta_source["llm_model"]
+        if "prompt_version" in meta_source:
+            payload["prompt_version"] = meta_source["prompt_version"]
     elif process_name in ("LLM Enrichment", "City Air Tracker LLM Enrichment"):
         from pipeline.llm_enrich.enrich import PROMPT_VERSION
-        payload["llm_model"] = os.getenv("OPENROUTER_MODEL")
+        payload["llm_model"] = getattr(failed_exc, "llm_model", None) or os.getenv("OPENROUTER_MODEL")
         payload["prompt_version"] = PROMPT_VERSION
 
     try:
