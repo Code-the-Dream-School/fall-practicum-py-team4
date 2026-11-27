@@ -14,3 +14,4 @@ streamlit>=1.36
 plotly>=5.22
 pytest>=8.2
 supabase
+boto3>=1.34

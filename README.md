@@ -59,3 +59,5 @@ python -m pytest
 ## Additional docs
 
 Browse [Docs table of Contents](./docs/docs_toc.md) for the full categorized index.
+
+For deploying the ingestion handler to AWS Lambda and triggering it with EventBridge, see [AWS Lambda ingestion](./docs/lambda_ingestion.md).

@@ -6,6 +6,8 @@ The `docs/` folder is organized by purpose so contributors can find the right st
 
 Use these docs when you want to install, run, debug, or validate the project locally.
 
+- [AWS Lambda ingestion](./lambda_ingestion.md)
+
 ## Collaboration
 
 Use these docs when onboarding to the repo, learning the workflow, reviewing pull requests, or reading team-facing project background material.
