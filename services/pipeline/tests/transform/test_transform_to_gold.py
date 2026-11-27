@@ -132,7 +132,7 @@ SAMPLE_GOLD_AIR = [
         "city_id": 1,
         "aqi_rolling_7d": 0.0,
         "pm2_5_rolling_7d": 0.0,
-        "llm_response": ""
+        "llm_response": None
     },
     {
         "date_time": datetime(2025, 5, 1, 1, 0, tzinfo=timezone.utc),
@@ -145,7 +145,7 @@ SAMPLE_GOLD_AIR = [
         "city_id": 1,
         "aqi_rolling_7d": 0.0,
         "pm2_5_rolling_7d": 0.0,
-        "llm_response": ""
+        "llm_response": None
     },
     {
         "date_time": datetime(2025, 5, 1, 2, 0, tzinfo=timezone.utc),
@@ -158,7 +158,7 @@ SAMPLE_GOLD_AIR = [
         "city_id": 1,
         "aqi_rolling_7d": 0.0,
         "pm2_5_rolling_7d": 0.0,
-        "llm_response": ""
+        "llm_response": None
     }
 ]
 

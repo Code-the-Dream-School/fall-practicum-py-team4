@@ -270,3 +270,73 @@ def test_planner_single_expected_dates_query_and_batch_slicing(mock_supabase_cli
   assert len(plan) == 2
   assert plan[0]["missing_dates"] == expected_first_two
   assert plan[1]["missing_dates"] == expected_first_two
+
+
+@pytest.mark.unit
+def test_planner_raises_on_city_lookup_error(mock_supabase_client):
+  """Test that a Supabase error in get_city_id propagates instead of treating the city as new."""
+  def table_side_effect(table_name):
+    table_mock = MagicMock()
+    if table_name == "gold_cities":
+      table_mock.select.return_value.eq.return_value.limit.return_value.execute.side_effect = RuntimeError("Supabase read timeout")
+    return table_mock
+
+  mock_supabase_client.table.side_effect = table_side_effect
+
+  planner = AirPollutionPlanner(cities=["Bogota"], mode="backfill", supabase_client=mock_supabase_client)
+
+  with pytest.raises(RuntimeError, match="Supabase read timeout"):
+    planner.create_execution_plan()
+
+
+@pytest.mark.unit
+def test_planner_raises_on_pipeline_runs_error(mock_supabase_client):
+  """Test that a Supabase error in get_last_successful_run_time propagates instead of falling back to yesterday."""
+  def table_side_effect(table_name):
+    table_mock = MagicMock()
+    if table_name == "pipeline_runs":
+      table_mock.select.return_value.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.side_effect = RuntimeError("DB connection lost")
+    return table_mock
+
+  mock_supabase_client.table.side_effect = table_side_effect
+
+  planner = AirPollutionPlanner(cities=["London"], mode="incremental", supabase_client=mock_supabase_client)
+
+  with pytest.raises(RuntimeError, match="DB connection lost"):
+    planner.create_execution_plan()
+
+
+@pytest.mark.unit
+def test_planner_raises_on_gold_air_data_chunk_error(mock_supabase_client):
+  """Test that a mid-chunk Supabase error in get_missing_dates_for_city_id propagates instead of scheduling unqueried dates."""
+  mock_city_response = MagicMock(data=[{"id": "city-uuid-tokyo-789"}])
+
+  gold_air_data_mock = MagicMock()
+  # First chunk succeeds, second chunk fails
+  gold_air_data_mock.select.return_value.eq.return_value.gte.return_value.lte.return_value.execute.side_effect = [
+      MagicMock(data=[]),
+      RuntimeError("Chunk query failed"),
+  ]
+
+  def table_side_effect(table_name):
+    if table_name == "gold_cities":
+      m = MagicMock()
+      m.select.return_value.eq.return_value.limit.return_value.execute.return_value = mock_city_response
+      return m
+    elif table_name == "gold_air_data":
+      return gold_air_data_mock
+    return MagicMock()
+
+  mock_supabase_client.table.side_effect = table_side_effect
+
+  # 30-day window with 15-day chunks forces 2 chunk queries
+  planner = AirPollutionPlanner(
+      cities=["Tokyo"],
+      mode="backfill",
+      window_days=30,
+      chunk_size=15,
+      supabase_client=mock_supabase_client,
+  )
+
+  with pytest.raises(RuntimeError, match="Chunk query failed"):
+    planner.create_execution_plan()

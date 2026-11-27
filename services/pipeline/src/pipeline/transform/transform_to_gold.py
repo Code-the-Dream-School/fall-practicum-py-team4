@@ -83,7 +83,7 @@ def parse_air_data(air_record: dict, city_id: int) -> list[dict]:
             "city_id": city_id,
             "aqi_rolling_7d": 0.0,          # replaced after transform
             "pm2_5_rolling_7d": 0.0,        # replaced after transform
-            "llm_response": ""              # replaced after transform
+            "llm_response": None            # replaced after transform
         })
         
     try:

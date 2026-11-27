@@ -184,3 +184,47 @@ def test_log_task_failure_executes_upsert(mock_get_client):
         "message": "Task failed during database insertion"
     }, on_conflict="id")
     mock_client.table().upsert().execute.assert_called_once()
+
+@pytest.mark.unit
+@patch("pipeline.utils.track_runs.get_supabase_client")
+def test_log_task_failure_records_partial_progress(mock_get_client):
+    """Test that a failed task logs partial records and LLM metadata attached to the exception."""
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+
+    mock_task = MagicMock()
+    mock_task.name = "LLM Enrichment"
+
+    mock_task_run = MagicMock()
+    mock_task_run.id = "67890-fghij"
+    mock_task_run.total_run_time = timedelta(seconds=14.2)
+    mock_task_run.start_time.isoformat.return_value = "2026-11-02T10:05:00+00:00"
+
+    err = RuntimeError("OpenRouter failed on batch 21")
+    err.partial_result = {
+        "success": 480,
+        "llm_model": "google/gemma-3-27b-it:free",
+        "prompt_version": "v2",
+    }
+
+    mock_state = MagicMock(spec=State)
+    mock_state.message = "OpenRouter failed on batch 21"
+    mock_state.result.return_value = err
+
+    log_task_failure(mock_task, mock_task_run, mock_state)
+
+    mock_client.table().upsert.assert_called_once_with(
+        {
+            "id": "67890-fghij",
+            "run_type": "TASK",
+            "process": "LLM Enrichment",
+            "status": "FAILED",
+            "runs_time": 14.2,
+            "created_at": "2026-11-02T10:05:00+00:00",
+            "records_added": 480,
+            "message": "OpenRouter failed on batch 21",
+            "llm_model": "google/gemma-3-27b-it:free",
+            "prompt_version": "v2",
+        },
+        on_conflict="id",
+    )
