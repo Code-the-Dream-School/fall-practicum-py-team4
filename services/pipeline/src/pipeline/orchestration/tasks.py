@@ -206,8 +206,23 @@ def calculate_rolling_averages(
 
     # Discard historical readings
     batch_start = min(get_timestamp(r, i) for i, r in enumerate(current_batch))
-    rolling7d_output = [r for r in enriched_readings if r["date_time"] >= batch_start]
-    
+    current_ts_set = {get_timestamp(r, i) for i, r in enumerate(current_batch)}
+
+    rolling7d_output = []
+    for r in enriched_readings:
+        prev = r.pop("_prev_rolling", None)
+        if r["date_time"] < batch_start:
+            continue
+
+        is_current = r["date_time"] in current_ts_set
+        rolling_changed = any(
+            prev is None or prev.get(f"{field}_rolling_7d") != r[f"{field}_rolling_7d"]
+            for field in fields
+        )
+
+        if is_current or rolling_changed:
+            rolling7d_output.append({**r, "llm_response": None})
+
     return (len(rolling7d_output), rolling7d_output)
 
 # Load Gold Cities

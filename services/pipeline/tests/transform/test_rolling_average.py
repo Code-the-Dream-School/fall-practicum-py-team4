@@ -79,7 +79,7 @@ def test_fetch_historical_readings_success():
     mock_response.data = [
         {"date_time": "2026-11-08T12:00:00+00:00", "city_id": 1, "aqi": 12.0}
     ]
-    mock_supabase.table.return_value.select.return_value.eq.return_value.gte.return_value.lt.return_value.order.return_value.execute.return_value = mock_response
+    mock_supabase.table.return_value.select.return_value.eq.return_value.gte.return_value.lte.return_value.order.return_value.execute.return_value = mock_response
 
     current_readings = [
         {"date_time": base_time, "city_id": 1, "aqi": 15.0}
@@ -121,7 +121,7 @@ def test_fetch_historical_readings_raises_runtime_error():
     mock_supabase = MagicMock()
     
     # Simulate a database crash / exception
-    mock_supabase.table.return_value.select.return_value.eq.return_value.gte.return_value.lt.return_value.order.return_value.execute.side_effect = Exception("DB Connection timeout")
+    mock_supabase.table.return_value.select.return_value.eq.return_value.gte.return_value.lte.return_value.order.return_value.execute.side_effect = Exception("DB Connection timeout")
 
     current_readings = [{"date_time": base_time, "city_id": 1, "aqi": 15.0}]
 
@@ -132,3 +132,61 @@ def test_fetch_historical_readings_raises_runtime_error():
             current_readings=current_readings,
             city_name="Charlotte"
         )
+
+@pytest.mark.unit
+def test_fetch_historical_readings_dedupes_and_strips_extra_columns():
+    """Verifies bidirectional window, DB column stripping (PGRST102), and timestamp deduplication."""
+    base_time = datetime(2026, 11, 9, 12, 0, tzinfo=timezone.utc)
+    future_time = base_time + timedelta(days=2)
+
+    mock_supabase = MagicMock()
+    mock_response = MagicMock()
+    mock_response.data = [
+        # Duplicate of current_readings (should be dropped)
+        {"id": 1, "date_time": base_time.isoformat(), "city_id": 1, "aqi": 99.0, "llm_summary": "old"},
+        # Existing future row with extra DB columns (should be kept, extra keys stripped)
+        {"id": 2, "date_time": future_time.isoformat(), "city_id": 1, "aqi": 18.0, "llm_summary": "keep"},
+    ]
+    mock_supabase.table.return_value.select.return_value.eq.return_value.gte.return_value.lte.return_value.order.return_value.execute.return_value = mock_response
+
+    current_readings = [{"date_time": base_time, "city_id": 1, "aqi": 15.0}]
+
+    result = fetch_historical_readings(
+        supabase_client=mock_supabase,
+        city_id=1,
+        current_readings=current_readings,
+        city_name="Charlotte",
+    )
+
+    assert len(result) == 2
+    assert set(result[0].keys()) == {"date_time", "city_id", "aqi", "_prev_rolling"}
+    assert result[0]["date_time"] == future_time
+    assert result[1]["aqi"] == 15.0
+
+
+@pytest.mark.unit
+def test_rolling_average_hourly_168h_boundary():
+    """Verifies 7 full days of hourly data (6d 23h span) produces a valid average on hour 168."""
+    base_time = datetime(2026, 10, 1, 0, 0, tzinfo=timezone.utc)
+    readings = [
+        {"date_time": base_time + timedelta(hours=i), "aqi": 10.0}
+        for i in range(168)
+    ]
+
+    enriched = add_rolling_average(readings, field="aqi", min_readings=144)
+
+    assert enriched[166]["aqi_rolling_7d"] == 0
+    assert enriched[167]["aqi_rolling_7d"] == 10.0
+
+
+@pytest.mark.unit
+def test_rolling_average_blocks_sparse_gap_with_min_readings():
+    """Verifies out-of-order chunks with a mid-window gap stay 0 until min_readings is met."""
+    base_time = datetime(2026, 10, 1, 0, 0, tzinfo=timezone.utc)
+    readings = [
+        {"date_time": base_time, "aqi": 10.0},
+        {"date_time": base_time + timedelta(days=7), "aqi": 20.0},
+    ]
+
+    enriched = add_rolling_average(readings, field="aqi", min_readings=144)
+    assert enriched[-1]["aqi_rolling_7d"] == 0
