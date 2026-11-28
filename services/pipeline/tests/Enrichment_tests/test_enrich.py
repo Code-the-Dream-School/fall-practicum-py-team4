@@ -34,6 +34,10 @@ def fake_responses(batch):
     return [{'id': row['id'], 'llm_response': 'Air quality is good.'} for row in batch]
 
 
+def fake_enrichment(batch):
+    return fake_responses(batch), 'test-gemma'
+
+
 # Summary validation
 
 def test_valid_summary():
@@ -85,19 +89,19 @@ def test_enrich_batch_matches_positions(monkeypatch):
         return json.dumps({'results': [
             {'position': 1, 'llm_response': 'Air quality is poor.'},
             {'position': 0, 'llm_response': 'Air quality is good.'},
-        ]})
+        ]}), 'test-gemma'
 
     monkeypatch.setattr(enrich, 'generate_summary', fake_generate)
-    assert enrich.enrich_batch(batch) == [
+    assert enrich.enrich_batch(batch) == ([
         {'id': 101, 'llm_response': 'Air quality is good.'},
         {'id': 102, 'llm_response': 'Air quality is poor.'},
-    ]
+    ], 'test-gemma')
 
 
 def test_enrich_batch_invalid_summary(monkeypatch):
-    monkeypatch.setattr(enrich, 'generate_summary', lambda prompt: json.dumps({
+    monkeypatch.setattr(enrich, 'generate_summary', lambda prompt: (json.dumps({
         'results': [{'position': 0, 'llm_response': 'Invalid summary'}]
-    }))
+    }), 'test-gemma'))
     with pytest.raises(enrich.EnrichmentBatchError, match='Invalid summary'):
         enrich.enrich_batch(sample_rows(1))
 
@@ -107,7 +111,7 @@ def test_enrich_batch_does_not_retry(monkeypatch):
 
     def fake_generate(prompt):
         calls.append(prompt)
-        return 'Invalid JSON'
+        return 'Invalid JSON', 'test-gemma'
 
     monkeypatch.setattr(enrich, 'generate_summary', fake_generate)
     with pytest.raises(enrich.EnrichmentBatchError):
@@ -116,32 +120,32 @@ def test_enrich_batch_does_not_retry(monkeypatch):
 
 
 def test_enrich_batch_rejects_unknown_position(monkeypatch):
-    monkeypatch.setattr(enrich, 'generate_summary', lambda prompt: json.dumps({
+    monkeypatch.setattr(enrich, 'generate_summary', lambda prompt: (json.dumps({
         'results': [{'position': 999, 'llm_response': 'Air quality is good.'}]
-    }))
+    }), 'test-gemma'))
     with pytest.raises(enrich.EnrichmentBatchError, match='Unexpected position'):
         enrich.enrich_batch(sample_rows(1))
 
 
 def test_enrich_batch_rejects_duplicate_positions(monkeypatch):
-    monkeypatch.setattr(enrich, 'generate_summary', lambda prompt: json.dumps({
+    monkeypatch.setattr(enrich, 'generate_summary', lambda prompt: (json.dumps({
         'results': [
             {'position': 0, 'llm_response': 'Air quality is good.'},
             {'position': 0, 'llm_response': 'Air quality is poor.'},
         ]
-    }))
+    }), 'test-gemma'))
     with pytest.raises(enrich.EnrichmentBatchError, match='Duplicate position'):
         enrich.enrich_batch(sample_rows(2))
 
 
 def test_enrich_batch_missing_results(monkeypatch):
-    monkeypatch.setattr(enrich, 'generate_summary', lambda prompt: '{}')
+    monkeypatch.setattr(enrich, 'generate_summary', lambda prompt: ('{}', 'test-gemma'))
     with pytest.raises(enrich.EnrichmentBatchError, match='Missing results array'):
         enrich.enrich_batch(sample_rows(1))
 
 
 def test_enrich_batch_wrong_result_count(monkeypatch):
-    monkeypatch.setattr(enrich, 'generate_summary', lambda prompt: '{"results": []}')
+    monkeypatch.setattr(enrich, 'generate_summary', lambda prompt: ('{"results": []}', 'test-gemma'))
     with pytest.raises(enrich.EnrichmentBatchError, match='Expected 1 results'):
         enrich.enrich_batch(sample_rows(1))
 
@@ -247,7 +251,7 @@ def test_fetch_records_missing_payload(supabase):
 
 def test_run_enrichment(monkeypatch, configured_env, supabase):
     mock_pages(supabase, [sample_rows(2, 101), []])
-    monkeypatch.setattr(enrich, 'enrich_batch', fake_responses)
+    monkeypatch.setattr(enrich, 'enrich_batch', fake_enrichment)
     saved = []
     monkeypatch.setattr(enrich, 'update_batch', lambda client, responses: saved.append(responses))
     assert enrich.run_enrichment(supabase) == {
@@ -260,14 +264,14 @@ def test_run_enrichment(monkeypatch, configured_env, supabase):
 def test_run_enrichment_no_records(configured_env, supabase):
     mock_pages(supabase, [[]])
     assert enrich.run_enrichment(supabase) == {
-        'success': 0, 'llm_model': 'test-gemma', 'prompt_version': 'v2'
+        'success': 0, 'llm_model': None, 'prompt_version': 'v2'
     }
     supabase.rpc.assert_not_called()
 
 
 def test_run_enrichment_pagination(monkeypatch, configured_env, supabase):
     query = mock_pages(supabase, [sample_rows(1000), sample_rows(5, 1001), []])
-    monkeypatch.setattr(enrich, 'enrich_batch', fake_responses)
+    monkeypatch.setattr(enrich, 'enrich_batch', fake_enrichment)
     batches = []
     monkeypatch.setattr(enrich, 'update_batch', lambda client, responses: batches.append(responses))
     result = enrich.run_enrichment(supabase)
@@ -290,12 +294,15 @@ def test_run_enrichment_partial_progress(monkeypatch, configured_env, supabase, 
         calls.append(batch)
         if len(calls) == 2:
             raise TestRateLimitError('Rate limit exceeded')
-        return fake_responses(batch)
+        return fake_enrichment(batch)
 
     monkeypatch.setattr(enrich, 'enrich_batch', fake_enrich)
     with caplog.at_level(logging.ERROR):
-        with pytest.raises(TestRateLimitError, match='Rate limit exceeded'):
+        with pytest.raises(TestRateLimitError, match='Rate limit exceeded') as exc_info:
             enrich.run_enrichment(supabase)
+    assert exc_info.value.partial_result == {
+        'success': 24, 'llm_model': 'test-gemma', 'prompt_version': 'v2'
+    }
     assert len(calls) == 2
     assert supabase.rpc.call_count == 1
     assert '24 successfully saved records' in caplog.text
@@ -321,7 +328,7 @@ def test_run_enrichment_missing_api_key(monkeypatch, supabase):
 
 def test_run_enrichment_progress_output(monkeypatch, configured_env, supabase, capsys):
     mock_pages(supabase, [sample_rows(25), []])
-    monkeypatch.setattr(enrich, 'enrich_batch', fake_responses)
+    monkeypatch.setattr(enrich, 'enrich_batch', fake_enrichment)
     monkeypatch.setattr(enrich, 'update_batch', lambda client, responses: None)
     ticks = iter([10.0, 12.5, 20.0, 20.4, 30.0, 31.25, 40.0, 40.75])
     monkeypatch.setattr(enrich.time, 'monotonic', lambda: next(ticks))
@@ -338,7 +345,7 @@ def test_run_enrichment_progress_output(monkeypatch, configured_env, supabase, c
 
 def test_run_enrichment_progress_resets_per_page(monkeypatch, configured_env, supabase, capsys):
     mock_pages(supabase, [sample_rows(24), sample_rows(1, 25), []])
-    monkeypatch.setattr(enrich, 'enrich_batch', fake_responses)
+    monkeypatch.setattr(enrich, 'enrich_batch', fake_enrichment)
     monkeypatch.setattr(enrich, 'update_batch', lambda client, responses: None)
     assert enrich.run_enrichment(supabase)['success'] == 25
     output = capsys.readouterr().out
@@ -351,7 +358,7 @@ def test_run_enrichment_save_failure_does_not_count_failed_batch(
     monkeypatch, configured_env, supabase, caplog, capsys
 ):
     mock_pages(supabase, [sample_rows(48)])
-    monkeypatch.setattr(enrich, 'enrich_batch', fake_responses)
+    monkeypatch.setattr(enrich, 'enrich_batch', fake_enrichment)
     calls = []
 
     def fake_save(client, responses):
@@ -361,8 +368,11 @@ def test_run_enrichment_save_failure_does_not_count_failed_batch(
 
     monkeypatch.setattr(enrich, 'update_batch', fake_save)
     with caplog.at_level(logging.ERROR):
-        with pytest.raises(enrich.EnrichmentDatabaseError, match='Save failed'):
+        with pytest.raises(enrich.EnrichmentDatabaseError, match='Save failed') as exc_info:
             enrich.run_enrichment(supabase)
+    assert exc_info.value.partial_result == {
+        'success': 24, 'llm_model': 'test-gemma', 'prompt_version': 'v2'
+    }
     assert len(calls) == 2
     assert '24 successfully saved records' in caplog.text
     output = capsys.readouterr().out
@@ -380,3 +390,47 @@ def test_run_enrichment_no_save_if_llm_fails(monkeypatch, configured_env, supaba
     with pytest.raises(enrich.EnrichmentBatchError, match='Invalid response'):
         enrich.run_enrichment(supabase)
     supabase.rpc.assert_not_called()
+
+
+# Batch limits and model tracking
+
+def test_run_enrichment_max_batches(monkeypatch, configured_env, supabase):
+    query = mock_pages(supabase, [sample_rows(100)])
+    monkeypatch.setattr(enrich, 'enrich_batch', fake_enrichment)
+    assert enrich.run_enrichment(supabase, max_batches=2) == {
+        'success': 48, 'llm_model': 'test-gemma', 'prompt_version': 'v2'
+    }
+    assert supabase.rpc.call_count == 2
+    assert query.execute.call_count == 1
+
+
+@pytest.mark.parametrize('max_batches', [0, -1, 1.5, '2', True, False])
+def test_run_enrichment_invalid_max_batches(configured_env, supabase, max_batches):
+    with pytest.raises(ValueError, match='max_batches must be a positive integer or None') as exc_info:
+        enrich.run_enrichment(supabase, max_batches=max_batches)
+    assert exc_info.value.partial_result == {
+        'success': 0, 'llm_model': None, 'prompt_version': 'v2'
+    }
+    supabase.table.assert_not_called()
+
+
+def test_run_enrichment_multiple_models(monkeypatch, configured_env, supabase):
+    mock_pages(supabase, [sample_rows(72), []])
+    models = iter(['gemma-b', 'gemma-a', 'gemma-b'])
+
+    def fake_enrich(batch):
+        return fake_responses(batch), next(models)
+
+    monkeypatch.setattr(enrich, 'enrich_batch', fake_enrich)
+    assert enrich.run_enrichment(supabase) == {
+        'success': 72, 'llm_model': 'gemma-a, gemma-b', 'prompt_version': 'v2'
+    }
+
+
+def test_run_enrichment_max_batches_across_pages(monkeypatch, configured_env, supabase):
+    query = mock_pages(supabase, [sample_rows(24), sample_rows(48, 25)])
+    monkeypatch.setattr(enrich, 'enrich_batch', fake_enrichment)
+    assert enrich.run_enrichment(supabase, max_batches=2)['success'] == 48
+    assert supabase.rpc.call_count == 2
+    assert query.execute.call_count == 2
+    query.gt.assert_called_once_with('id', 24)
