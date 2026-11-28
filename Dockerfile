@@ -1,8 +1,9 @@
-FROM python:3.11-slim
+FROM public.ecr.aws/lambda/python:3.11
 
-WORKDIR /app
+# ${LAMBDA_TASK_ROOT} resolves to /var/task in AWS Lambda
+WORKDIR ${LAMBDA_TASK_ROOT}
 
-# Install system dependencies if needed (uncomment if using git or build tools)
+# Install system dependencies if needed
 # RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
@@ -12,4 +13,5 @@ RUN pip install --no-cache-dir -r requirements.txt --prefer-binary
 
 COPY . .
 
-CMD ["python", "services/pipeline/run_flow.py"]
+# Point AWS Lambda directly to the handler function (module.path.function_name)
+CMD ["services.pipeline.handler.lambda_handler"]
